@@ -1,4 +1,15 @@
-.env
+# Node
 node_modules/
+npm-debug.log*
+
+# Builds / coverage
+dist/
+coverage/
+
+# Env files
 .env
-node_modules/
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
