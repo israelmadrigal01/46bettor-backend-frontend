@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8"/>
+<title>46bettor • Scoreboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2.0.6/css/pico.min.css">
+<main class="container">
+  <h3>Scoreboard (Live Open Picks)</h3>
+  <small id="api"></small>
+  <input id="q" placeholder="search team/market/tag…" />
+  <table id="tbl">
+    <thead><tr><th>Date</th><th>Sport</th><th>Matchup</th><th>Market</th><th>Odds</th><th>Tags</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</main>
+<script>
+  const API_BASE = (localStorage.API_BASE || "http://localhost:5050");
+  document.getElementById('api').textContent = `API: ${API_BASE}`;
+  const q = document.getElementById('q');
+  async function load() {
+    const r = await fetch(`${API_BASE}/api/public/scoreboard`);
+    const { picks=[] } = await r.json();
+    const needle = (q.value||"").toLowerCase();
+    const rows = picks.filter(p=>{
+      if (!needle) return true;
+      const s = `${p.homeTeam||""} ${p.awayTeam||""} ${p.market||""} ${p.selection||""} ${(p.tags||[]).join(" ")}`.toLowerCase();
+      return s.includes(needle);
+    });
+    const tb = document.querySelector('#tbl tbody');
+    tb.innerHTML = rows.map(p=>`
+      <tr>
+        <td>${p.date || (p.createdAt||"").slice(0,10)}</td>
+        <td>${p.sport || p.league || "-"}</td>
+        <td>${(p.awayTeam||"?")} @ ${(p.homeTeam||"?")}</td>
+        <td>${[p.market, p.selection, p.line!=null?`(${p.line})`:""].filter(Boolean).join(" ")}</td>
+        <td>${p.odds>0?`+${p.odds}`:p.odds ?? "—"}</td>
+        <td>${(p.tags||[]).map(t=>`<small>${t}</small>`).join(" ") || "—"}</td>
+      </tr>`).join("");
+  }
+  q.addEventListener('input', load);
+  load(); setInterval(load, 10000);
+</script>

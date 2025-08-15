@@ -1,0 +1,156 @@
+{
+  "info": {
+    "name": "46Bettor – Core API",
+    "_postman_id": "8a77e5ed-1723-4df2-9f6a-46b-core",
+    "description": "Core endpoints for 46Bettor backend: health, premium picks, bankroll, auto (NHL/NBA), settle, performance.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/health"
+      }
+    },
+    {
+      "name": "Dev Panel (HTML)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/devpanel"
+      }
+    },
+    {
+      "name": "Premium • Suggest (demo=1)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/premium/suggest?bankroll={{bankroll}}&demo=1",
+          "host": ["{{base_url}}"],
+          "path": ["api","premium","suggest"],
+          "query": [
+            {"key":"bankroll","value":"{{bankroll}}"},
+            {"key":"demo","value":"1"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "Premium • Today",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/premium/today"
+      }
+    },
+    {
+      "name": "Premium • Quick Settle (first=won, second=lost)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// If win_id/lose_id not set, try to fetch first two pending automatically",
+              "if (!pm.collectionVariables.get('win_id') || !pm.collectionVariables.get('lose_id')) {",
+              "  pm.sendRequest({url: pm.collectionVariables.get('base_url') + '/api/premium/today', method:'GET'}, (err, res) => {",
+              "    if (!err) {",
+              "      const data = res.json().data || [];",
+              "      const pending = data.filter(x => x.status === 'pending');",
+              "      if (pending.length >= 2) {",
+              "        pm.collectionVariables.set('win_id', pending[0]._id);",
+              "        pm.collectionVariables.set('lose_id', pending[1]._id);",
+              "      }",
+              "    }",
+              "  });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/premium/settle/quick?map={{win_id}}:won,{{lose_id}}:lost",
+          "host": ["{{base_url}}"],
+          "path": ["api","premium","settle","quick"],
+          "query": [
+            {"key":"map","value":"{{win_id}}:won,{{lose_id}}:lost"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "Premium • Performance (range)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/premium/perf?from={{from}}&to={{to}}",
+          "host": ["{{base_url}}"],
+          "path": ["api","premium","perf"],
+          "query": [
+            {"key":"from","value":"{{from}}"},
+            {"key":"to","value":"{{to}}"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "Bankroll • Recommend (debug)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/bankroll/recommend/debug?bankroll={{bankroll}}&odds={{odds}}&fairProb={{fairProb}}",
+          "host": ["{{base_url}}"],
+          "path": ["api","bankroll","recommend","debug"],
+          "query": [
+            {"key":"bankroll","value":"{{bankroll}}"},
+            {"key":"odds","value":"{{odds}}"},
+            {"key":"fairProb","value":"{{fairProb}}"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "AUTO • NHL (suggest 2)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/auto/nhl?bankroll={{bankroll}}&limit=2",
+          "host": ["{{base_url}}"],
+          "path": ["api","auto","nhl"],
+          "query": [
+            {"key":"bankroll","value":"{{bankroll}}"},
+            {"key":"limit","value":"2"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "AUTO • NBA (opening night sample)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/auto/nba?date={{nba_opening}}&bankroll={{bankroll}}&limit=2",
+          "host": ["{{base_url}}"],
+          "path": ["api","auto","nba"],
+          "query": [
+            {"key":"date","value":"{{nba_opening}}"},
+            {"key":"bankroll","value":"{{bankroll}}"},
+            {"key":"limit","value":"2"}
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {"key": "base_url", "value": "http://127.0.0.1:5050"},
+    {"key": "bankroll", "value": "2000"},
+    {"key": "odds", "value": "-135"},
+    {"key": "fairProb", "value": "0.60"},
+    {"key": "nba_opening", "value": "2025-10-21"},
+    {"key": "from", "value": "2025-08-01"},
+    {"key": "to", "value": "2025-08-31"},
+    {"key": "win_id", "value": "" },
+    {"key": "lose_id", "value": "" }
+  ]
+}
