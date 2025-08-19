@@ -1,4 +1,4 @@
-cat > index.js <<'EOF'
+cat > index.js <<'JS'
 // index.js
 require('dotenv').config();
 
@@ -57,7 +57,7 @@ const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || DEFAULT_ORIGINS.join(','))
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, true); // curl/Postman/no-Origin
       if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
       return cb(new Error('Not allowed by CORS'));
     },
@@ -95,9 +95,14 @@ const { isValidObjectId, Types } = mongoose;
 app.get('/api/public/picks/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    if (!PremiumPick || !isValidObjectId(id)) {
+
+    if (!PremiumPick) {
+      return res.status(501).json({ ok: false, error: 'model_unavailable' });
+    }
+    if (!isValidObjectId(id)) {
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
+
     const _id = new Types.ObjectId(id);
     const doc = await PremiumPick.findById(_id).lean();
     if (!doc) return res.status(404).json({ ok: false, error: 'not_found' });
@@ -188,4 +193,4 @@ process.on('uncaughtException', (err) => {
 });
 
 start();
-EOF
+JS
