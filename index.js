@@ -1,3 +1,4 @@
+cat > index.js <<'EOF'
 // index.js
 require('dotenv').config();
 
@@ -41,9 +42,7 @@ const DEFAULT_ORIGINS = [
   'https://app.46bettor.com',
   'https://46bettor.com',
   'https://www.46bettor.com',
-  // old preview (ok to leave)
   'https://shimmering-semolina-2e6f34.netlify.app',
-  // local dev:
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5050',
@@ -58,7 +57,7 @@ const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || DEFAULT_ORIGINS.join(','))
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true);          // curl/postman
+      if (!origin) return cb(null, true);
       if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
       return cb(new Error('Not allowed by CORS'));
     },
@@ -162,11 +161,12 @@ app.use('/api', (req, res) => {
 /* ------------------------------ Server & DB -------------------------- */
 async function start() {
   try {
-    if (!MONGO_URI) {
+    const uri = MONGO_URI;
+    if (!uri) {
       console.warn('[WARN] No Mongo URI set. Set MONGODB_URI (or MONGO_URI/MONGO_URL/DATABASE_URL) in env');
     } else {
       mongoose.set('strictQuery', true);
-      await mongoose.connect(MONGO_URI);
+      await mongoose.connect(uri);
       console.log('[OK] Mongo connected');
     }
 
@@ -188,3 +188,4 @@ process.on('uncaughtException', (err) => {
 });
 
 start();
+EOF
