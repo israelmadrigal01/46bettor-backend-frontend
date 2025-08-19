@@ -41,7 +41,9 @@ const DEFAULT_ORIGINS = [
   'https://app.46bettor.com',
   'https://46bettor.com',
   'https://www.46bettor.com',
+  // old preview (ok to leave)
   'https://shimmering-semolina-2e6f34.netlify.app',
+  // local dev:
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5050',
@@ -56,7 +58,7 @@ const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || DEFAULT_ORIGINS.join(','))
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, true);          // curl/postman
       if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
       return cb(new Error('Not allowed by CORS'));
     },
@@ -86,6 +88,47 @@ if (publicRouter) {
 } else {
   console.warn('[INFO] routes/public not found — skipping /api/public');
 }
+
+/* ---- Public pick-by-id (direct, guaranteed) ------------------------- */
+const PremiumPick = safeRequire(['./models/PremiumPick']);
+const { isValidObjectId, Types } = mongoose;
+
+app.get('/api/public/picks/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!PremiumPick || !isValidObjectId(id)) {
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+    const _id = new Types.ObjectId(id);
+    const doc = await PremiumPick.findById(_id).lean();
+    if (!doc) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const pick = {
+      id: String(doc._id),
+      date: doc.date,
+      sport: doc.sport,
+      league: doc.league,
+      eventId: doc.eventId ?? null,
+      homeTeam: doc.homeTeam ?? null,
+      awayTeam: doc.awayTeam ?? null,
+      market: doc.market,
+      selection: doc.selection,
+      line: doc.line ?? null,
+      odds: doc.odds,
+      status: doc.status,
+      finalScore: doc.finalScore ?? null,
+      settledAt: doc.settledAt ?? null,
+      tags: Array.isArray(doc.tags) ? doc.tags : [],
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+    };
+
+    res.json({ ok: true, pick });
+  } catch (e) {
+    console.error('[public/picks/:id] error', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
 
 /* ------------------------------ Admin Key Guard ---------------------- */
 app.use('/api', (req, res, next) => {
