@@ -1,7 +1,11 @@
+/* eslint-env browser */
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
-const apiBase = () => localStorage.getItem('apiBase') || import.meta.env.VITE_API_BASE || 'https://api.46bettor.com';
+const apiBase = () =>
+  localStorage.getItem('apiBase') ||
+  import.meta.env.VITE_API_BASE ||
+  'https://api.46bettor.com';
 
 export default function PickDetail() {
   const { id } = useParams();
@@ -12,13 +16,13 @@ export default function PickDetail() {
     const go = async () => {
       setErr("");
       try {
-        // Try the dedicated endpoint first (we add it in part B)
+        // Try dedicated endpoint first
         const r = await fetch(`${apiBase()}/api/public/picks/${id}`);
         if (r.ok) {
           const j = await r.json();
           if (j?.ok && j?.pick) { setPick(j.pick); return; }
         }
-        // Fallback: look in /public/recent and find the id
+        // Fallback: search recent
         const rr = await fetch(`${apiBase()}/api/public/recent?limit=50`);
         const jj = await rr.json();
         const found = jj?.picks?.find(p => p.id === id);
@@ -39,7 +43,9 @@ export default function PickDetail() {
       <h1 className="text-2xl font-bold">Pick Details</h1>
       <div className="rounded-2xl border p-4 space-y-2">
         <div className="text-sm text-gray-500">ID: {pick.id}</div>
-        <div className="font-medium">{pick.date} — {pick.sport}{pick.league ? ` (${pick.league})` : ""}</div>
+        <div className="font-medium">
+          {pick.date} — {pick.sport}{pick.league ? ` (${pick.league})` : ""}
+        </div>
         <div className="text-gray-700">
           {pick.homeTeam ?? 'Home'} vs {pick.awayTeam ?? 'Away'}
         </div>
@@ -48,11 +54,19 @@ export default function PickDetail() {
           {pick.line != null ? <> • Line: <span className="font-mono">{pick.line}</span></> : null}
           • Odds: <span className="font-mono">{pick.odds}</span>
         </div>
-        {pick.status && <div>Status: <b>{pick.status}</b>{pick.finalScore ? ` — ${pick.finalScore}` : ""}</div>}
+        {pick.status && (
+          <div>
+            Status: <b>{pick.status}</b>{pick.finalScore ? ` — ${pick.finalScore}` : ""}
+          </div>
+        )}
         {Array.isArray(pick.tags) && pick.tags.length > 0 && (
           <div className="text-sm text-gray-600">Tags: {pick.tags.join(", ")}</div>
         )}
-        {pick.settledAt && <div className="text-sm text-gray-500">Settled: {new Date(pick.settledAt).toLocaleString()}</div>}
+        {pick.settledAt && (
+          <div className="text-sm text-gray-500">
+            Settled: {new Date(pick.settledAt).toLocaleString()}
+          </div>
+        )}
       </div>
     </div>
   );

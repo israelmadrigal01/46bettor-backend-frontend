@@ -4,6 +4,7 @@ export default function ShareButton({ url }) {
       await navigator.clipboard.writeText(url);
       alert("Link copied!");
     } catch {
+      // Fallback prompt on older browsers
       prompt("Copy this link:", url);
     }
   };
