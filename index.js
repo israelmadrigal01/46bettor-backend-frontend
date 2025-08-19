@@ -8,13 +8,9 @@ const mongoose = require('mongoose');
 const app = express();
 
 /* -------------------------- Config & Helpers -------------------------- */
-
 app.set('trust proxy', true);
-
-// Use platform PORT (Render) or default 5050 locally
 const PORT = Number(process.env.PORT || 5050);
 
-// Accept any of these env names for Mongo
 function getMongoUri() {
   return (
     process.env.MONGODB_URI ||
@@ -30,7 +26,6 @@ if (!process.env.ADMIN_KEY) {
   console.warn('[WARN] ADMIN_KEY is not set in env — protected routes will reject all requests.');
 }
 
-// Safe require helper (works if a file is missing)
 function safeRequire(candidates) {
   for (const rel of candidates) {
     try {
@@ -42,21 +37,11 @@ function safeRequire(candidates) {
 }
 
 /* ------------------------------ CORS --------------------------------- */
-/**
- * Allow your production front-end + local dev.
- * You can override with ENV:
- *   CORS_ORIGINS="https://app.46bettor.com,https://46bettor.com,https://www.46bettor.com"
- */
 const DEFAULT_ORIGINS = [
-  // PROD app domain(s)
   'https://app.46bettor.com',
   'https://46bettor.com',
   'https://www.46bettor.com',
-
-  // Netlify preview/original (keep while migrating)
   'https://shimmering-semolina-2e6f34.netlify.app',
-
-  // Local dev
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5050',
@@ -71,7 +56,6 @@ const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || DEFAULT_ORIGINS.join(','))
 app.use(
   cors({
     origin(origin, cb) {
-      // allow non-browser tools (curl, Postman) with no Origin
       if (!origin) return cb(null, true);
       if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
       return cb(new Error('Not allowed by CORS'));
@@ -83,14 +67,10 @@ app.use(
   })
 );
 
-// Body parsers
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ------------------------------ Public Routes ------------------------ */
-/** Keep these BEFORE the admin-key guard **/
-
-// Simple health check (public)
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -100,7 +80,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Mount /api/public (auto-loads health/tiles/scoreboard/recent/picks if present)
 const publicRouter = safeRequire(['./routes/public']);
 if (publicRouter) {
   app.use('/api/public', publicRouter);
@@ -109,19 +88,9 @@ if (publicRouter) {
 }
 
 /* ------------------------------ Admin Key Guard ---------------------- */
-/** Applies to ALL /api/* EXCEPT:
- *   - /api/health
- *   - /api/public/*
- */
 app.use('/api', (req, res, next) => {
-  // Let CORS preflight through
   if (req.method === 'OPTIONS') return next();
-
-  // Allow public endpoints through
-  if (req.path === '/health' || req.path.startsWith('/public')) {
-    return next();
-  }
-
+  if (req.path === '/health' || req.path.startsWith('/public')) return next();
   const key = req.get('x-admin-key');
   if (!key || key !== process.env.ADMIN_KEY) {
     return res.status(401).json({ ok: false, error: 'unauthorized' });
@@ -130,47 +99,24 @@ app.use('/api', (req, res, next) => {
 });
 
 /* ------------------------------ Protected Routes --------------------- */
-
-// Metrics
 const metricsRouter = safeRequire(['./routes/metrics']);
-if (metricsRouter) {
-  app.use('/api/metrics', metricsRouter);
-} else {
-  console.warn('[INFO] routes/metrics not found — skipping /api/metrics');
-}
+if (metricsRouter) app.use('/api/metrics', metricsRouter);
 
-// Premium picks
 const premiumRouter = safeRequire(['./routes/premium', './routes/premiumRoutes']);
-if (premiumRouter) {
-  app.use('/api/premium', premiumRouter);
-} else {
-  console.warn('[INFO] premium routes not found — skipping /api/premium');
-}
+if (premiumRouter) app.use('/api/premium', premiumRouter);
 
-// App routes
 const appRouter = safeRequire(['./routes/app', './routes/appRoutes']);
-if (appRouter) {
-  app.use('/api/app', appRouter);
-} else {
-  console.warn('[INFO] app routes not found — skipping /api/app');
-}
+if (appRouter) app.use('/api/app', appRouter);
 
-// Dev panel
 const devpanelRouter = safeRequire(['./routes/devpanel', './routes/devpanelRoutes']);
-if (devpanelRouter) {
-  app.use('/api/devpanel', devpanelRouter);
-} else {
-  console.warn('[INFO] devpanel routes not found — skipping /api/devpanel');
-}
+if (devpanelRouter) app.use('/api/devpanel', devpanelRouter);
 
 /* ------------------------------ 404 for /api ------------------------- */
-
 app.use('/api', (req, res) => {
   res.status(404).json({ ok: false, error: 'not_found' });
 });
 
 /* ------------------------------ Server & DB -------------------------- */
-
 async function start() {
   try {
     if (!MONGO_URI) {
