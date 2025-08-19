@@ -1,12 +1,2 @@
-[build]
-  base = "46bettor-frontend"
-  publish = "dist"
-  command = "npm run build"
-
 [build.environment]
   VITE_API_BASE = "https://api.46bettor.com"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
