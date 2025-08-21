@@ -1,76 +1,94 @@
 /* eslint-env browser */
-import { useEffect, useState } from "react";
-import API from "../api/client";
+import { useEffect, useState } from 'react';
+import { api } from '../api/client';
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function Scoreboard() {
-  const [nba, setNBA] = useState({ loading: true });
-  const [odds, setOdds] = useState({ loading: true });
+  const [date, setDate] = useState(todayISO());
+  const [state, setState] = useState({ loading: false, error: null, items: [] });
+
+  const load = async () => {
+    setState(s => ({ ...s, loading: true, error: null }));
+    try {
+      // We’ll show NBA scoreboard; same data as Schedule, different name.
+      const out = await api.schedule('nba', date);
+      setState({ loading: false, error: null, items: out?.items || [] });
+    } catch (err) {
+      setState({ loading: false, error: err instanceof Error ? err.message : String(err), items: [] });
+    }
+  };
 
   useEffect(() => {
-    let cancel = false;
-
-    async function load() {
-      try {
-        const [sched, o] = await Promise.all([
-          API.public.schedule.nba("2025-02-01"), // pick a historical date with games
-          API.public.odds.nba()
-        ]);
-        if (!cancel) {
-          setNBA({ loading: false, data: sched });
-          setOdds({ loading: false, data: o });
-        }
-      } catch (err) {
-        if (!cancel) {
-          setNBA((s)=>({ ...s, loading:false, error: String(err.message || err)}));
-          setOdds((s)=>({ ...s, loading:false, error: String(err.message || err)}));
-        }
-      }
-    }
     load();
-    return () => { cancel = true; };
-  }, []);
-
-  const games = nba.data?.items || [];
-  const lines = odds.data?.items || [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date]);
 
   return (
-    <div className="max-w-5xl mx-auto p-4 space-y-6">
-      <h1 className="text-2xl font-bold">Scoreboard</h1>
+    <div className="max-w-5xl mx-auto p-4 space-y-4">
+      <h1 className="text-2xl font-bold">Scoreboard (NBA)</h1>
 
-      <section>
-        <h2 className="font-semibold mb-2">NBA Schedule (sample date)</h2>
-        {nba.loading ? "Loading…" : nba.error ? <div className="text-red-600">{nba.error}</div> : (
-          games.length ? (
-            <div className="border rounded-xl divide-y">
-              {games.slice(0,10).map(g => (
-                <div key={g.id} className="p-3 grid md:grid-cols-3 gap-2">
-                  <div className="font-medium">{g.awayTeam} @ {g.homeTeam}</div>
-                  <div className="text-sm text-gray-600">{new Date(g.startsAt || g.date || "").toLocaleString()}</div>
-                  <div className="text-sm">Status: {g.status || "-"}</div>
-                </div>
-              ))}
-            </div>
-          ) : <div className="text-gray-500">No games found.</div>
-        )}
-      </section>
+      <div className="flex gap-3 items-end">
+        <label className="text-sm">
+          <div className="mb-1 font-medium">Date</div>
+          <input
+            type="date"
+            className="border rounded-xl px-3 py-2"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
 
-      <section>
-        <h2 className="font-semibold mb-2">NBA Odds (best moneyline)</h2>
-        {odds.loading ? "Loading…" : odds.error ? <div className="text-red-600">{odds.error}</div> : (
-          lines.length ? (
-            <div className="border rounded-xl divide-y">
-              {lines.slice(0,10).map(g => (
-                <div key={g.id} className="p-3 grid md:grid-cols-4 gap-2 items-center">
-                  <div className="font-medium">{g.awayTeam} @ {g.homeTeam}</div>
-                  <div className="text-sm text-gray-600">{new Date(g.startsAt).toLocaleString()}</div>
-                  <div>Home ML: {g.bestHomeML ?? "-"}</div>
-                  <div>Away ML: {g.bestAwayML ?? "-"}</div>
-                </div>
-              ))}
-            </div>
-          ) : <div className="text-gray-500">No odds available.</div>
-        )}
-      </section>
+        <button onClick={load} className="rounded-2xl px-4 py-2 bg-black text-white">
+          Refresh
+        </button>
+
+        <button onClick={() => setDate('2025-02-01')} className="rounded-2xl px-4 py-2 border">
+          NBA: Feb 1, 2025
+        </button>
+      </div>
+
+      {state.loading && <div>Loading…</div>}
+      {state.error && <div className="text-red-600">Error: {state.error}</div>}
+
+      {!state.loading && !state.error && state.items.length === 0 && (
+        <div className="border rounded-xl p-4">No NBA games on {date}.</div>
+      )}
+
+      {!state.loading && !state.error && state.items.length > 0 && (
+        <div className="border rounded-xl overflow-hidden">
+          <div
+            className="grid gap-2 font-semibold text-xs text-gray-600 border-b p-2"
+            style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr' }}
+          >
+            <div>Matchup</div>
+            <div>Status</div>
+            <div>Tip</div>
+            <div>Score (A)</div>
+            <div>Score (H)</div>
+          </div>
+
+          {state.items.map((g, idx) => {
+            const tip = g.startsAt ? new Date(g.startsAt).toLocaleTimeString() : '-';
+            const title = g.awayTeam && g.homeTeam ? `${g.awayTeam} @ ${g.homeTeam}` : g.id;
+            return (
+              <div
+                key={g.id || idx}
+                className="grid gap-2 p-2 border-b last:border-0"
+                style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr' }}
+              >
+                <div className="font-medium">{title}</div>
+                <div>{g.status || '-'}</div>
+                <div>{tip}</div>
+                <div>{g.awayScore ?? '-'}</div>
+                <div>{g.homeScore ?? '-'}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
