@@ -1,105 +1,70 @@
 /* eslint-env browser */
+const defaultBase = import.meta.env?.VITE_API_BASE || "https://api.46bettor.com";
 
-// Unified API client for 46bettor (public + protected endpoints).
+function getBase() {
+  try {
+    const ls = localStorage.getItem("apiBase");
+    return (ls || defaultBase).replace(/\/+$/, "");
+  } catch {
+    return defaultBase.replace(/\/+$/, "");
+  }
+}
 
-const storage = {
-  get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
-  set(key, val) { try { localStorage.setItem(key, val); } catch {} },
-};
+function getAdminKey() {
+  try {
+    return localStorage.getItem("adminKey") || "";
+  } catch {
+    return "";
+  }
+}
 
-function normalizeBase(v) {
-  return String(v || '').replace(/\/+$/, '');
+async function jget(path, { secure = false, qs = "" } = {}) {
+  const base = getBase();
+  const url = `${base}${path}${qs ? (path.includes("?") ? "&" : "?") + qs : ""}`;
+  const headers = { Accept: "application/json" };
+  if (secure) headers["x-admin-key"] = getAdminKey();
+
+  const res = await fetch(url, { headers });
+  const txt = await res.text();
+  let json;
+  try { json = txt ? JSON.parse(txt) : null; } catch { json = { ok:false, error: txt || res.statusText }; }
+
+  if (!res.ok) {
+    const msg = json?.error || `${res.status} ${res.statusText}`;
+    throw new Error(msg);
+  }
+  return json;
 }
 
 const API = {
-  util: {
-    getApiBase() {
-      const ls = storage.get('apiBase');
-      const env = import.meta.env?.VITE_API_BASE;
-      return normalizeBase(ls || env || 'https://api.46bettor.com');
-    },
-    getAdminKey() {
-      return storage.get('adminKey') || '';
-    },
-  },
-
-  async _request(path, { method = 'GET', body, headers } = {}) {
-    const base = API.util.getApiBase();
-    const url = `${base}${path}`;
-    const res = await fetch(url, {
-      method,
-      headers: {
-        Accept: 'application/json',
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-        ...(headers || {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`${method} ${url} -> ${res.status} ${res.statusText} ${text}`);
-    }
-    return res.json();
-  },
-
-  async _get(path, headers) { return API._request(path, { method: 'GET', headers }); },
-  async _post(path, body, headers) { return API._request(path, { method: 'POST', body, headers }); },
-
+  base: getBase,
   public: {
-    health() { return API._get('/api/public/health'); },
-    tiles()  { return API._get('/api/public/tiles'); },
-    async recent() {
-      const d = await API._get('/api/public/recent');
-      if (Array.isArray(d)) return d;
-      if (d?.picks && Array.isArray(d.picks)) return d.picks;
-      if (d?.items && Array.isArray(d.items)) return d.items;
-      if (d?.data && Array.isArray(d.data)) return d.data;
-      return [];
-    },
-    pickById(id) { return API._get(`/api/public/picks/${encodeURIComponent(id)}`); },
-
+    health: () => jget("/api/public/health"),
+    tiles:  () => jget("/api/public/tiles"),
+    recent: () => jget("/api/public/recent").then(d => Array.isArray(d?.picks) ? d.picks : (d?.picks || d?.items || d?.data || d || [])),
     schedule: {
-      nba()  { return API._get('/api/public/schedule/nba'); },
-      mlb()  { return API._get('/api/public/schedule/mlb'); },
-      nhl()  { return API._get('/api/public/schedule/nhl'); },
-      nfl()  { return API._get('/api/public/schedule/nfl'); },
-      soccer(comp='PL') { return API._get(`/api/public/soccer?comp=${encodeURIComponent(comp)}`); },
+      nba:   (date) => jget("/api/public/schedule/nba",   { qs: date ? `date=${encodeURIComponent(date)}` : "" }),
+      mlb:   (date) => jget("/api/public/schedule/mlb",   { qs: date ? `date=${encodeURIComponent(date)}` : "" }),
+      nhl:   (date) => jget("/api/public/schedule/nhl",   { qs: date ? `date=${encodeURIComponent(date)}` : "" }),
+      nfl:   (date) => jget("/api/public/schedule/nfl",   { qs: date ? `date=${encodeURIComponent(date)}` : "" }),
+      soccer:(comp,date) => jget("/api/public/schedule/soccer", { qs: [comp?`comp=${encodeURIComponent(comp)}`:"", date?`date=${encodeURIComponent(date)}`:""].filter(Boolean).join("&") }),
     },
-
-    // Extras
-    weatherCity(city, units='imperial') {
-      return API._get(`/api/public/weather?city=${encodeURIComponent(city)}&units=${encodeURIComponent(units)}`);
-    },
-    news(q='sports', pageSize=10, language='en') {
-      return API._get(`/api/public/news?q=${encodeURIComponent(q)}&pageSize=${pageSize}&language=${encodeURIComponent(language)}`);
-    },
-    highlights(q='nba highlights', maxResults=6) {
-      return API._get(`/api/public/highlights?q=${encodeURIComponent(q)}&maxResults=${maxResults}`);
-    },
-
-    // ODDS
     odds: {
-      nba(params='') { return API._get(`/api/public/odds/nba${params ? `?${params}` : ''}`); },
-      mlb(params='') { return API._get(`/api/public/odds/mlb${params ? `?${params}` : ''}`); },
-      nhl(params='') { return API._get(`/api/public/odds/nhl${params ? `?${params}` : ''}`); },
-      nfl(params='') { return API._get(`/api/public/odds/nfl${params ? `?${params}` : ''}`); },
+      nba: () => jget("/api/public/odds/nba"),
+      nfl: () => jget("/api/public/odds/nfl"),
+      mlb: () => jget("/api/public/odds/mlb"),
+      nhl: () => jget("/api/public/odds/nhl"),
     },
+    pickById: (id) => jget(`/api/public/picks/${encodeURIComponent(id)}`)
   },
-
-  metrics: {
-    _hdr() {
-      const key = API.util.getAdminKey();
-      return key ? { 'x-admin-key': key } : {};
+  secure: {
+    metrics: {
+      summary: () => jget("/api/metrics/summary", { secure: true }),
+      tiles:   () => jget("/api/metrics/tiles",   { secure: true }),
+      ledger:  (qs="") => jget("/api/metrics/ledger", { secure: true, qs }),
     },
-    summary() { return API._get('/api/metrics/summary', API.metrics._hdr()); },
-    tiles()   { return API._get('/api/metrics/tiles',   API.metrics._hdr()); },
-    ledger(q='') {
-      const qs = q || '';
-      return API._get(`/api/metrics/ledger${qs ? `?${qs}` : ''}`, API.metrics._hdr());
-    },
-  },
+    premium: () => jget("/api/premium", { secure: true }),
+  }
 };
 
-const api = API;
-export { API, api };
 export default API;

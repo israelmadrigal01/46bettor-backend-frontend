@@ -1,233 +1,76 @@
 /* eslint-env browser */
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-
-// Read API base (localStorage first, then Vite .env)
-function getApiBase() {
-  const ls = (localStorage.getItem("apiBase") || "").trim().replace(/\/+$/, "");
-  const env =
-    (import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : "")
-      .trim()
-      .replace(/\/+$/, "");
-  return ls || env || "";
-}
-
-const SPORTS = [
-  { key: "nba", label: "NBA", needsKey: false }, // balldontlie (optional key)
-  { key: "mlb", label: "MLB", needsKey: true },  // MySportsFeeds
-  { key: "nhl", label: "NHL", needsKey: true },  // MySportsFeeds
-  { key: "nfl", label: "NFL", needsKey: true },  // MySportsFeeds
-  { key: "soccer", label: "Soccer", needsKey: true }, // football-data.org
-];
-
-const SOCCER_COMPS = [
-  { code: "PL", name: "Premier League" },
-  { code: "PD", name: "LaLiga" },
-  { code: "BL1", name: "Bundesliga" },
-  { code: "SA", name: "Serie A" },
-  { code: "FL1", name: "Ligue 1" },
-  { code: "CL", name: "Champions League" },
-];
+import API from "../api/client";
 
 export default function Scoreboard() {
-  const [apiBase, setApiBase] = useState(getApiBase());
-  const [sport, setSport] = useState("nba");
-  const [comp, setComp] = useState("PL");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [nba, setNBA] = useState({ loading: true });
+  const [odds, setOdds] = useState({ loading: true });
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [games, setGames] = useState([]);
-
-  // Keep API base in sync with header controls
   useEffect(() => {
-    const onStorage = () => setApiBase(getApiBase());
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    let cancel = false;
+
+    async function load() {
+      try {
+        const [sched, o] = await Promise.all([
+          API.public.schedule.nba("2025-02-01"), // pick a historical date with games
+          API.public.odds.nba()
+        ]);
+        if (!cancel) {
+          setNBA({ loading: false, data: sched });
+          setOdds({ loading: false, data: o });
+        }
+      } catch (err) {
+        if (!cancel) {
+          setNBA((s)=>({ ...s, loading:false, error: String(err.message || err)}));
+          setOdds((s)=>({ ...s, loading:false, error: String(err.message || err)}));
+        }
+      }
+    }
+    load();
+    return () => { cancel = true; };
   }, []);
 
-  async function load() {
-    const base = getApiBase();
-    setApiBase(base);
-
-    if (!base) {
-      setLoading(false);
-      setError(
-        "API base is not set. In the header, set API to http://127.0.0.1:5050 for dev (or https://api.46bettor.com)."
-      );
-      setGames([]);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError("");
-      setGames([]);
-
-      const extra = sport === "soccer" ? `&comp=${encodeURIComponent(comp)}` : "";
-      const url = `${base}/api/public/schedule/${sport}?date=${encodeURIComponent(date)}${extra}`;
-      const res = await fetch(url, { headers: { Accept: "application/json" } });
-      const json = await res.json();
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || `${res.status} ${res.statusText}`);
-      }
-
-      setGames(Array.isArray(json.items) ? json.items : []);
-      setLoading(false);
-    } catch (e) {
-      setLoading(false);
-      setError(String(e.message || e));
-      setGames([]);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sport, comp, date]);
-
-  const stepDate = (days) => {
-    const d = new Date(date + "T00:00:00");
-    if (!isNaN(d.getTime())) {
-      d.setDate(d.getDate() + days);
-      setDate(d.toISOString().slice(0, 10));
-    }
-  };
+  const games = nba.data?.items || [];
+  const lines = odds.data?.items || [];
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 16 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px" }}>Scoreboard</h1>
+    <div className="max-w-5xl mx-auto p-4 space-y-6">
+      <h1 className="text-2xl font-bold">Scoreboard</h1>
 
-      <div style={{ color: "#6b7280", marginBottom: 12 }}>
-        Looking for fixtures by league and date? Try the{" "}
-        <Link to="/schedule" style={{ textDecoration: "underline" }}>Schedule</Link> page.
-      </div>
-
-      {/* Controls */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 10,
-          alignItems: "center",
-          marginBottom: 12,
-        }}
-      >
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {SPORTS.map((s) => (
-            <button
-              key={s.key}
-              onClick={() => setSport(s.key)}
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: 999,
-                padding: "6px 12px",
-                background: sport === s.key ? "#111" : "#fff",
-                color: sport === s.key ? "#fff" : "#111",
-                cursor: "pointer",
-              }}
-              title={`Show ${s.label}`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-
-        {sport === "soccer" && (
-          <select
-            value={comp}
-            onChange={(e) => setComp(e.target.value)}
-            style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "6px 10px" }}
-            title="Soccer competition"
-          >
-            {SOCCER_COMPS.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name} ({c.code})
-              </option>
-            ))}
-          </select>
-        )}
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            onClick={() => stepDate(-1)}
-            style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "6px 10px", cursor: "pointer" }}
-            title="Previous day"
-          >
-            ← Prev
-          </button>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "6px 10px" }}
-            title="Pick a date"
-          />
-          <button
-            onClick={() => stepDate(1)}
-            style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "6px 10px", cursor: "pointer" }}
-            title="Next day"
-          >
-            Next →
-          </button>
-        </div>
-
-        <button
-          onClick={load}
-          style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "6px 10px", cursor: "pointer" }}
-          title="Refresh from server"
-        >
-          Refresh
-        </button>
-
-        <div style={{ marginLeft: "auto", fontSize: 12, color: "#6b7280" }}>
-          API: <code>{apiBase || "(unset)"}</code>
-        </div>
-      </div>
-
-      {/* Body */}
-      {error ? (
-        <div style={{ color: "#b91c1c", border: "1px solid #fecaca", background: "#fef2f2", padding: 12, borderRadius: 12 }}>
-          {error}
-          <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
-            Tip: MLB/NHL/NFL require <code>MYSPORTSFEEDS_API_KEY</code>. Soccer requires{" "}
-            <code>FOOTBALL_DATA_API_KEY</code>. Set them in your backend <code>.env</code> and restart.
-          </div>
-        </div>
-      ) : loading ? (
-        <div>Loading…</div>
-      ) : games.length === 0 ? (
-        <div style={{ border: "1px dashed #d1d5db", borderRadius: 12, padding: 16 }}>
-          No games found for this date.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
-          {games.map((g, i) => (
-            <div key={g.id || i} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
-              <div style={{ fontWeight: 800 }}>{(g.awayTeam || "-")} @ {(g.homeTeam || "-")}</div>
-              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
-                {g.sport}
-                {g.league ? ` · ${g.league}` : ""} {g.provider ? ` · ${g.provider}` : ""}
-              </div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>
-                {g.startsAt ? new Date(g.startsAt).toLocaleString() : "—"}
-              </div>
-
-              <div style={{ marginTop: 8 }}>
-                {g.homeScore != null || g.awayScore != null ? (
-                  <div style={{ fontWeight: 700 }}>
-                    {g.awayScore ?? "-"} - {g.homeScore ?? "-"}
-                  </div>
-                ) : (
-                  <span>Status: {g.status || "-"}</span>
-                )}
-              </div>
-
-              {g.venue && <div style={{ fontSize: 12, color: "#6b7280" }}>Venue: {g.venue}</div>}
+      <section>
+        <h2 className="font-semibold mb-2">NBA Schedule (sample date)</h2>
+        {nba.loading ? "Loading…" : nba.error ? <div className="text-red-600">{nba.error}</div> : (
+          games.length ? (
+            <div className="border rounded-xl divide-y">
+              {games.slice(0,10).map(g => (
+                <div key={g.id} className="p-3 grid md:grid-cols-3 gap-2">
+                  <div className="font-medium">{g.awayTeam} @ {g.homeTeam}</div>
+                  <div className="text-sm text-gray-600">{new Date(g.startsAt || g.date || "").toLocaleString()}</div>
+                  <div className="text-sm">Status: {g.status || "-"}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          ) : <div className="text-gray-500">No games found.</div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="font-semibold mb-2">NBA Odds (best moneyline)</h2>
+        {odds.loading ? "Loading…" : odds.error ? <div className="text-red-600">{odds.error}</div> : (
+          lines.length ? (
+            <div className="border rounded-xl divide-y">
+              {lines.slice(0,10).map(g => (
+                <div key={g.id} className="p-3 grid md:grid-cols-4 gap-2 items-center">
+                  <div className="font-medium">{g.awayTeam} @ {g.homeTeam}</div>
+                  <div className="text-sm text-gray-600">{new Date(g.startsAt).toLocaleString()}</div>
+                  <div>Home ML: {g.bestHomeML ?? "-"}</div>
+                  <div>Away ML: {g.bestAwayML ?? "-"}</div>
+                </div>
+              ))}
+            </div>
+          ) : <div className="text-gray-500">No odds available.</div>
+        )}
+      </section>
     </div>
   );
 }
