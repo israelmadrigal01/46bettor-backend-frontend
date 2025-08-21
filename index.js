@@ -7,8 +7,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const compression = require('compression');
 const helmet = require('helmet');
+const compression = require('compression');
 const morgan = require('morgan');
 
 const app = express();
@@ -47,11 +47,14 @@ function safeRequire(paths) {
   return null;
 }
 
-/* -------------------------- Middlewares --------------------- */
-
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+/* -------------------------- Hardening & basics -------------- */
+app.use(helmet());
 app.use(compression());
 app.use(morgan('tiny'));
+
+// Body parsers
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 /* -------------------------- CORS ---------------------------- */
 
@@ -86,10 +89,6 @@ app.use(
   })
 );
 
-// Body parsers
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true }));
-
 /* -------------------------- Public: always-on ---------------- */
 
 // Simple public health (always available)
@@ -104,7 +103,7 @@ app.get('/api/health', (_req, res) => {
 
 /* -------------------------- Public routers ------------------ */
 
-// Mount routes/public (if present)
+// /api/public (if present)
 const publicRouter = safeRequire(['./routes/public/index.js', './routes/public.js', './routes/public']);
 if (publicRouter) {
   app.use('/api/public', publicRouter);
@@ -113,25 +112,21 @@ if (publicRouter) {
   console.warn('[INFO] routes/public not found — skipping /api/public');
 }
 
-// Public schedule
-try {
-  const publicSchedule = require('./routes/public-schedule.js');
-  app.use('/api/public', publicSchedule);
+// optional: schedule
+const scheduleRouter = safeRequire(['./routes/public-schedule.js']);
+if (scheduleRouter) {
+  app.use('/api/public', scheduleRouter);
   console.log('[public] mounted public-schedule.js');
-} catch (e) {
-  console.warn('[public] public-schedule.js not found or failed to load:', e?.message || e);
 }
 
-// Public odds (NEW)
-try {
-  const publicOdds = require('./routes/public-odds.js');
-  app.use('/api/public', publicOdds);
+// optional: odds
+const oddsRouter = safeRequire(['./routes/public-odds.js']);
+if (oddsRouter) {
+  app.use('/api/public', oddsRouter);
   console.log('[public] mounted public-odds.js');
-} catch (e) {
-  console.warn('[public] public-odds.js not found or failed to load:', e?.message || e);
 }
 
-// Direct public pick-by-id route (works even if routes/public is missing)
+// Direct public pick-by-id (works even if routes/public is missing)
 const PremiumPick =
   safeRequire(['./models/PremiumPick.js', './models/PremiumPick', './models/Pick.js', './models/picks.js']) || null;
 
@@ -143,10 +138,16 @@ app.get('/api/public/picks/:id', async (req, res) => {
     const id = req.params.id;
     let doc = null;
 
+    // Try ObjectId lookup
     if (id && id.length >= 12) {
-      try { doc = await PremiumPick.findById(id).lean(); } catch (_) {}
+      try {
+        doc = await PremiumPick.findById(id).lean();
+      } catch (_) {}
     }
-    if (!doc) { doc = await PremiumPick.findOne({ id }).lean(); }
+    // Fallback external id
+    if (!doc) {
+      doc = await PremiumPick.findOne({ id }).lean();
+    }
     if (!doc) return res.status(404).json({ ok: false, error: 'not_found' });
 
     return res.json({ ok: true, pick: doc });
@@ -171,36 +172,36 @@ app.use('/api', (req, res, next) => {
 
 /* ---------------------- Protected routes -------------------- */
 
+// optional protected routers (only mount if files exist)
 const metricsRouter = safeRequire(['./routes/metrics/index.js', './routes/metrics.js']);
 if (metricsRouter) {
   app.use('/api/metrics', metricsRouter);
   console.log('[mount] routes/metrics → /api/metrics');
-} else {
-  console.warn('[INFO] routes/metrics not found — skipping /api/metrics');
 }
 
 const premiumRouter = safeRequire(['./routes/premium/index.js', './routes/premium.js', './routes/premiumRoutes.js']);
 if (premiumRouter) {
   app.use('/api/premium', premiumRouter);
   console.log('[mount] routes/premium → /api/premium');
-} else {
-  console.warn('[INFO] premium routes not found — skipping /api/premium');
 }
 
 const appRouter = safeRequire(['./routes/app/index.js', './routes/app.js', './routes/appRoutes.js']);
 if (appRouter) {
   app.use('/api/app', appRouter);
   console.log('[mount] routes/app → /api/app');
-} else {
-  console.warn('[INFO] app routes not found — skipping /api/app');
 }
 
 const devpanelRouter = safeRequire(['./routes/devpanel/index.js', './routes/devpanel.js', './routes/devpanelRoutes.js']);
 if (devpanelRouter) {
   app.use('/api/devpanel', devpanelRouter);
   console.log('[mount] routes/devpanel → /api/devpanel');
-} else {
-  console.warn('[INFO] devpanel routes not found — skipping /api/devpanel');
+}
+
+// NEW: protected diagnostics (admin-only)
+const diagRouter = safeRequire(['./routes/diag.js']);
+if (diagRouter) {
+  app.use('/api/diag', diagRouter);
+  console.log('[mount] routes/diag → /api/diag');
 }
 
 /* -------------------------- 404 for /api -------------------- */
