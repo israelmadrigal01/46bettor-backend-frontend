@@ -1,57 +1,55 @@
-// src/api/client.js
+// 46bettor-frontend/src/api/client.js
+/* Minimal API client + global fetch patch to attach x-admin-key on protected endpoints */
+
 function getBase() {
-  const fromLS = (localStorage.getItem('apiBase') || '').trim().replace(/\/+$/, '');
-  const fromEnv = (import.meta.env.VITE_API_BASE || '').trim().replace(/\/+$/, '');
-  return fromLS || fromEnv || 'https://api.46bettor.com';
-}
-
-async function getJSON(path, { admin = false, signal } = {}) {
-  const base = getBase();
-  const url = `${base}${path}`;
-  const headers = { Accept: 'application/json' };
-
-  // Add admin header if requested and we have a key
-  if (admin) {
-    const key = (localStorage.getItem('adminKey') || '').trim();
-    if (key) headers['x-admin-key'] = key;
-  }
-
-  const res = await fetch(url, { headers, signal });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`GET ${url} -> ${res.status} ${res.statusText} ${text}`);
-  }
-  return res.json();
+  // Prefer localStorage override, then Vite env, then prod API
+  const ls = (typeof localStorage !== "undefined" && localStorage.getItem("apiBase")) || "";
+  const env = import.meta?.env?.VITE_API_BASE || "";
+  const base = (ls || env || "https://api.46bettor.com").replace(/\/+$/, "");
+  return base;
 }
 
 export const api = {
-  base: getBase(),
-  refreshBase() {
-    this.base = getBase();
-    return this.base;
+  get base() {
+    return getBase();
   },
-
-  // Public
-  health: (opts) => getJSON('/api/public/health', opts),
-  tiles: (opts) => getJSON('/api/public/tiles', opts),
-  recent: async (opts) => {
-    const d = await getJSON('/api/public/recent', opts);
-    if (Array.isArray(d)) return d;
-    if (d?.picks) return d.picks;
-    if (d?.items) return d.items;
-    if (d?.data) return d.data;
-    return [];
+  headers(extra = {}) {
+    const h = new Headers(extra);
+    h.set("Accept", "application/json");
+    const k = typeof localStorage !== "undefined" ? localStorage.getItem("adminKey") : "";
+    if (k) h.set("x-admin-key", k);
+    return h;
   },
-  schedule: {
-    nba: (q = '') => getJSON(`/api/public/schedule/nba${q}`),
-    mlb: (q = '') => getJSON(`/api/public/schedule/mlb${q}`),
-    nhl: (q = '') => getJSON(`/api/public/schedule/nhl${q}`),
-    nfl: (q = '') => getJSON(`/api/public/schedule/nfl${q}`),
-    soccer: (q = '?comp=PL') => getJSON(`/api/public/schedule/soccer${q}`),
-    all: (q = '?comp=PL') => getJSON(`/api/public/schedule/all${q}`),
+  async get(path, init = {}) {
+    const url = path.startsWith("http") ? path : `${this.base}${path}`;
+    const res = await fetch(url, { ...init, headers: this.headers(init.headers) });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json();
   },
-
-  // Protected examples (use admin: true so header is sent)
-  metrics: () => getJSON('/api/metrics', { admin: true }),
-  premiumList: () => getJSON('/api/premium', { admin: true }),
 };
+
+// --- Global fetch patch: automatically attach x-admin-key for /api/metrics and /api/premium ---
+(function patchFetchForAdminKey() {
+  if (typeof window === "undefined" || !window.fetch) return;
+  const original = window.fetch;
+  window.fetch = (input, init = {}) => {
+    try {
+      const urlStr = typeof input === "string" ? input : (input && input.url) || "";
+      // Build absolute if it's a relative API path
+      const abs = urlStr.startsWith("http") ? urlStr : `${getBase()}${urlStr.startsWith("/") ? "" : "/"}${urlStr}`;
+      const pathname = new URL(abs).pathname;
+      const needsKey = /^\/api\/(metrics|premium)\b/.test(pathname);
+
+      if (needsKey) {
+        const k = (typeof localStorage !== "undefined" && localStorage.getItem("adminKey")) || "";
+        const headers = new Headers(init.headers || {});
+        headers.set("Accept", "application/json");
+        if (k) headers.set("x-admin-key", k);
+        return original(input, { ...init, headers });
+      }
+    } catch (_) {
+      // fall through to original fetch
+    }
+    return original(input, init);
+  };
+})();
