@@ -1,18 +1,26 @@
 // index.js — 46bettor backend (CommonJS)
 
+// 1) Env
 require('dotenv').config();
 
+// 2) Core
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const compression = require('compression');
+const helmet = require('helmet');
+const morgan = require('morgan');
 
 const app = express();
 
 /* -------------------------- Config -------------------------- */
 
 app.set('trust proxy', true);
+
+// Port
 const PORT = Number(process.env.PORT || 5050);
 
+// Prefer MONGODB_URI but accept other names
 function getMongoUri() {
   return (
     process.env.MONGODB_URI ||
@@ -28,6 +36,7 @@ if (!process.env.ADMIN_KEY) {
   console.warn('[WARN] ADMIN_KEY not set — protected routes will reject.');
 }
 
+// Helper: safe require of optional files (CommonJS only)
 function safeRequire(paths) {
   for (const p of paths) {
     try {
@@ -38,17 +47,26 @@ function safeRequire(paths) {
   return null;
 }
 
+/* -------------------------- Middlewares --------------------- */
+
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(compression());
+app.use(morgan('tiny'));
+
 /* -------------------------- CORS ---------------------------- */
 
 const DEFAULT_ORIGINS = [
+  // production frontends
   'https://app.46bettor.com',
   'https://46bettor.com',
   'https://www.46bettor.com',
+  // local dev
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5050',
   'http://127.0.0.1:5050',
 ];
+
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || DEFAULT_ORIGINS.join(','))
   .split(',')
   .map((s) => s.trim())
@@ -57,7 +75,7 @@ const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || DEFAULT_ORIGINS.join(','))
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, true); // curl/Postman
       if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
       return cb(new Error('Not allowed by CORS'));
     },
@@ -68,11 +86,13 @@ app.use(
   })
 );
 
+// Body parsers
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 /* -------------------------- Public: always-on ---------------- */
 
+// Simple public health (always available)
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
@@ -84,6 +104,7 @@ app.get('/api/health', (_req, res) => {
 
 /* -------------------------- Public routers ------------------ */
 
+// Mount routes/public (if present)
 const publicRouter = safeRequire(['./routes/public/index.js', './routes/public.js', './routes/public']);
 if (publicRouter) {
   app.use('/api/public', publicRouter);
@@ -92,6 +113,7 @@ if (publicRouter) {
   console.warn('[INFO] routes/public not found — skipping /api/public');
 }
 
+// Public schedule
 try {
   const publicSchedule = require('./routes/public-schedule.js');
   app.use('/api/public', publicSchedule);
@@ -100,14 +122,7 @@ try {
   console.warn('[public] public-schedule.js not found or failed to load:', e?.message || e);
 }
 
-try {
-  const publicExtras = require('./routes/public-extras.js');
-  app.use('/api/public', publicExtras);
-  console.log('[public] mounted public-extras.js');
-} catch (e) {
-  console.warn('[public] public-extras.js not found or failed to load:', e?.message || e);
-}
-
+// Public odds (NEW)
 try {
   const publicOdds = require('./routes/public-odds.js');
   app.use('/api/public', publicOdds);
@@ -116,7 +131,7 @@ try {
   console.warn('[public] public-odds.js not found or failed to load:', e?.message || e);
 }
 
-// Public pick-by-id (works even if routes/public is missing)
+// Direct public pick-by-id route (works even if routes/public is missing)
 const PremiumPick =
   safeRequire(['./models/PremiumPick.js', './models/PremiumPick', './models/Pick.js', './models/picks.js']) || null;
 
@@ -127,11 +142,13 @@ app.get('/api/public/picks/:id', async (req, res) => {
     }
     const id = req.params.id;
     let doc = null;
+
     if (id && id.length >= 12) {
       try { doc = await PremiumPick.findById(id).lean(); } catch (_) {}
     }
-    if (!doc) doc = await PremiumPick.findOne({ id }).lean();
+    if (!doc) { doc = await PremiumPick.findOne({ id }).lean(); }
     if (!doc) return res.status(404).json({ ok: false, error: 'not_found' });
+
     return res.json({ ok: true, pick: doc });
   } catch (err) {
     console.error('[ERROR] /api/public/picks/:id', err);
@@ -140,7 +157,7 @@ app.get('/api/public/picks/:id', async (req, res) => {
 });
 
 /* ---------------------- Admin key guard --------------------- */
-
+// Applies to /api/* except /api/health and /api/public/*
 app.use('/api', (req, res, next) => {
   if (req.method === 'OPTIONS') return next();
   if (req.path === '/health' || req.path.startsWith('/public')) return next();
