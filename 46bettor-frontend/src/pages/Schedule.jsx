@@ -1,23 +1,13 @@
 /* eslint-env browser */
+/* global import.meta */
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-
-// Read API base (localStorage first, then Vite .env)
-function getApiBase() {
-  const ls = (localStorage.getItem("apiBase") || "").trim().replace(/\/+$/, "");
-  const env =
-    (import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : "")
-      .trim()
-      .replace(/\/+$/, "");
-  return ls || env || "";
-}
 
 const SPORTS = [
-  { key: "nba", label: "NBA", needsKey: false }, // balldontlie (optional key)
-  { key: "mlb", label: "MLB", needsKey: true },  // MySportsFeeds
-  { key: "nhl", label: "NHL", needsKey: true },  // MySportsFeeds
-  { key: "nfl", label: "NFL", needsKey: true },  // MySportsFeeds
-  { key: "soccer", label: "Soccer", needsKey: true }, // football-data.org
+  { key: "nba", label: "NBA" },
+  { key: "mlb", label: "MLB" },
+  { key: "nhl", label: "NHL" },
+  { key: "nfl", label: "NFL" },
+  { key: "soccer", label: "Soccer" },
 ];
 
 const SOCCER_COMPS = [
@@ -29,17 +19,28 @@ const SOCCER_COMPS = [
   { code: "CL", name: "Champions League" },
 ];
 
-export default function Scoreboard() {
+// Resolve API base from localStorage first, then from Vite .env
+function getApiBase() {
+  const ls = (localStorage.getItem("apiBase") || "").trim().replace(/\/+$/, "");
+  const env =
+    (import.meta && import.meta.env && import.meta.env.VITE_API_BASE
+      ? String(import.meta.env.VITE_API_BASE)
+      : ""
+    ).trim().replace(/\/+$/, "");
+  return ls || env || "";
+}
+
+export default function Schedule() {
   const [apiBase, setApiBase] = useState(getApiBase());
   const [sport, setSport] = useState("nba");
-  const [comp, setComp] = useState("PL");
+  const [comp, setComp] = useState("PL"); // only used for soccer
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [games, setGames] = useState([]);
+  const [items, setItems] = useState([]);
 
-  // Keep API base in sync with header controls
+  // Keep apiBase in sync if user hits "Set" in the header controls
   useEffect(() => {
     const onStorage = () => setApiBase(getApiBase());
     window.addEventListener("storage", onStorage);
@@ -55,15 +56,14 @@ export default function Scoreboard() {
       setError(
         "API base is not set. In the header, set API to http://127.0.0.1:5050 for dev (or https://api.46bettor.com)."
       );
-      setGames([]);
+      setItems([]);
       return;
     }
 
     try {
       setLoading(true);
       setError("");
-      setGames([]);
-
+      setItems([]);
       const extra = sport === "soccer" ? `&comp=${encodeURIComponent(comp)}` : "";
       const url = `${base}/api/public/schedule/${sport}?date=${encodeURIComponent(date)}${extra}`;
       const res = await fetch(url, { headers: { Accept: "application/json" } });
@@ -71,20 +71,19 @@ export default function Scoreboard() {
       if (!res.ok || json?.ok === false) {
         throw new Error(json?.error || `${res.status} ${res.statusText}`);
       }
-
-      setGames(Array.isArray(json.items) ? json.items : []);
+      setItems(Array.isArray(json.items) ? json.items : []);
       setLoading(false);
     } catch (e) {
       setLoading(false);
       setError(String(e.message || e));
-      setGames([]);
+      setItems([]);
     }
   }
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sport, comp, date]);
+  }, [sport, comp, date]); // apiBase changes via storage listener -> load() re-reads it
 
   const stepDate = (days) => {
     const d = new Date(date + "T00:00:00");
@@ -96,12 +95,7 @@ export default function Scoreboard() {
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: 16 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px" }}>Scoreboard</h1>
-
-      <div style={{ color: "#6b7280", marginBottom: 12 }}>
-        Looking for fixtures by league and date? Try the{" "}
-        <Link to="/schedule" style={{ textDecoration: "underline" }}>Schedule</Link> page.
-      </div>
+      <h1 style={{ fontSize: 24, fontWeight: 900, margin: "0 0 12px" }}>Schedules</h1>
 
       {/* Controls */}
       <div
@@ -185,6 +179,20 @@ export default function Scoreboard() {
         </div>
       </div>
 
+      {/* Status */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700 }}>
+          {(() => {
+            try {
+              return new Date(date + "T00:00:00").toLocaleDateString();
+            } catch {
+              return date;
+            }
+          })()}
+        </div>
+        {sport === "soccer" && <div style={{ fontSize: 12, color: "#6b7280" }}>Competition: {comp}</div>}
+      </div>
+
       {/* Body */}
       {error ? (
         <div style={{ color: "#b91c1c", border: "1px solid #fecaca", background: "#fef2f2", padding: 12, borderRadius: 12 }}>
@@ -196,13 +204,13 @@ export default function Scoreboard() {
         </div>
       ) : loading ? (
         <div>Loading…</div>
-      ) : games.length === 0 ? (
+      ) : items.length === 0 ? (
         <div style={{ border: "1px dashed #d1d5db", borderRadius: 12, padding: 16 }}>
           No games found for this date.
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
-          {games.map((g, i) => (
+          {items.map((g, i) => (
             <div key={g.id || i} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>
               <div style={{ fontWeight: 800 }}>{(g.awayTeam || "-")} @ {(g.homeTeam || "-")}</div>
               <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>

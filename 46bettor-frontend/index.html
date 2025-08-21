@@ -2,25 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1"
+    />
     <title>46bettor — Model Picks & Bankroll Tracking</title>
     <meta name="description" content="Daily model-driven picks with bankroll, ROI, and sport breakdowns." />
-    <meta property="og:title" content="46bettor" />
-    <meta property="og:description" content="Model-driven picks with live bankroll and ROI." />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://app.46bettor.com" />
+    <link rel="icon" href="/favicon.ico" />
   </head>
-  <body>
+  <body style="margin:0;background:#f8fafc">
+    <!-- React mounts here -->
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
 
-    <!-- Netlify Forms registration (hidden stub for React form) -->
-    <form name="contact" data-netlify="true" netlify-honeypot="bot-field" hidden>
-      <input type="text" name="name" />
-      <input type="email" name="email" />
-      <textarea name="message"></textarea>
-    </form>
+    <!-- Vite dev client (OK in dev) -->
+    <script type="module" src="/@vite/client"></script>
+
+    <!-- IMPORTANT: boots your React app -->
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

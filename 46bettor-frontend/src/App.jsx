@@ -5,96 +5,50 @@ import { Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard.jsx';
 import PremiumPicks from './pages/PremiumPicks.jsx';
 import Scoreboard from './pages/Scoreboard.jsx';
+import Schedule from './pages/Schedule.jsx';
 import PickDetail from './pages/PickDetail.jsx';
-
-/* --- Simple inline pages so nothing errors if you didn't create files --- */
-function About() {
-  return (
-    <div className="max-w-3xl mx-auto p-6 space-y-4">
-      <h1 className="text-3xl font-bold">About 46bettor</h1>
-      <p className="text-gray-600">
-        46bettor tracks model-driven picks with bankroll, ROI, and sport-level splits.
-        The dashboard uses public endpoints for stats and an admin key (stored in your
-        browser) for protected metrics.
-      </p>
-      <ul className="list-disc pl-6 text-gray-700 space-y-1">
-        <li>Live tiles & ledger</li>
-        <li>Sport / tags breakdown</li>
-        <li>Public endpoints for transparency</li>
-      </ul>
-    </div>
-  );
-}
-
-function Contact() {
-  return (
-    <div className="max-w-xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-4">Contact</h1>
-      <form name="contact" method="POST" data-netlify="true" action="/thanks" className="space-y-4">
-        <input type="hidden" name="form-name" value="contact" />
-        <label className="block">
-          <span className="text-sm text-gray-700">Name</span>
-          <input name="name" required className="mt-1 w-full rounded-xl border p-3" />
-        </label>
-        <label className="block">
-          <span className="text-sm text-gray-700">Email</span>
-          <input name="email" type="email" required className="mt-1 w-full rounded-xl border p-3" />
-        </label>
-        <label className="block">
-          <span className="text-sm text-gray-700">Message</span>
-          <textarea name="message" rows="5" required className="mt-1 w-full rounded-xl border p-3" />
-        </label>
-        <button className="rounded-2xl px-5 py-2.5 bg-black text-white">Send</button>
-      </form>
-      <p className="text-sm text-gray-500 mt-3">Submissions appear in Netlify → Forms.</p>
-    </div>
-  );
-}
-
-function Thanks() {
-  return (
-    <div className="max-w-xl mx-auto p-6 text-center">
-      <h1 className="text-3xl font-bold mb-2">Thanks!</h1>
-      <p className="text-gray-600">We got your message and will reply soon.</p>
-    </div>
-  );
-}
-/* ----------------------------------------------------------------------- */
+import Thanks from './pages/Thanks.jsx';
+import Contact from './pages/Contact.jsx';
+import About from './pages/About.jsx';
 
 function Masked({ value }) {
   if (!value) return <span className="text-gray-400">not set</span>;
-  const tail = value.slice(-6);
+  const tail = String(value).slice(-6);
   return <span>••••••••••••{tail}</span>;
 }
 
 export default function App() {
-  const [apiBaseInput, setApiBaseInput] = useState(
-    localStorage.getItem('apiBase') || 'https://api.46bettor.com'
-  );
-  const [adminKeyInput, setAdminKeyInput] = useState(
-    localStorage.getItem('adminKey') || ''
-  );
+  // defaults
+  const defaultApi =
+    (localStorage.getItem('apiBase') || import.meta.env.VITE_API_BASE || 'https://api.46bettor.com').trim();
+
+  const [apiBaseInput, setApiBaseInput] = useState(defaultApi);
+  const [adminKeyInput, setAdminKeyInput] = useState(localStorage.getItem('adminKey') || '');
   const [savedFlash, setSavedFlash] = useState(false);
 
   const activeLink = 'px-3 py-2 rounded-xl bg-black text-white';
   const idleLink = 'px-3 py-2 rounded-xl text-gray-700 hover:bg-gray-100';
 
   const applySettings = () => {
-    localStorage.setItem('apiBase', apiBaseInput.trim());
+    const base = apiBaseInput.trim().replace(/\/+$/, '');
+    localStorage.setItem('apiBase', base || '');
     if (adminKeyInput.trim()) {
       localStorage.setItem('adminKey', adminKeyInput.trim());
+    } else {
+      localStorage.removeItem('adminKey');
     }
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1200);
+    // broadcast so pages that listen can react immediately
     window.dispatchEvent(new Event('storage'));
   };
 
   const currentApiBase = useMemo(
-    () => localStorage.getItem('apiBase') || apiBaseInput,
+    () => (localStorage.getItem('apiBase') || apiBaseInput || '').trim(),
     [apiBaseInput]
   );
   const currentAdminKey = useMemo(
-    () => localStorage.getItem('adminKey') || adminKeyInput,
+    () => (localStorage.getItem('adminKey') || adminKeyInput || '').trim(),
     [adminKeyInput]
   );
 
@@ -114,6 +68,9 @@ export default function App() {
               <NavLink to="/scoreboard" className={({ isActive }) => (isActive ? activeLink : idleLink)}>
                 Scoreboard
               </NavLink>
+              <NavLink to="/schedule" className={({ isActive }) => (isActive ? activeLink : idleLink)}>
+                Schedule
+              </NavLink>
               <NavLink to="/about" className={({ isActive }) => (isActive ? activeLink : idleLink)}>
                 About
               </NavLink>
@@ -123,6 +80,7 @@ export default function App() {
             </nav>
           </div>
 
+          {/* Controls */}
           <div className="flex flex-col md:flex-row gap-2 md:items-center md:gap-3">
             <div className="text-sm">
               <div className="font-medium">API:</div>
@@ -135,7 +93,7 @@ export default function App() {
                 />
               </div>
               <div className="text-xs text-gray-500">
-                Current: <span className="font-mono">{currentApiBase}</span>
+                Current: <span className="font-mono">{currentApiBase || '(unset)'}</span>
               </div>
             </div>
 
@@ -162,9 +120,7 @@ export default function App() {
               Set
             </button>
 
-            {savedFlash && (
-              <span className="text-green-600 text-sm">Saved ✓</span>
-            )}
+            {savedFlash && <span className="text-green-600 text-sm">Saved ✓</span>}
           </div>
         </div>
 
@@ -179,6 +135,9 @@ export default function App() {
             </NavLink>
             <NavLink to="/scoreboard" className={({ isActive }) => (isActive ? activeLink : idleLink)}>
               Scoreboard
+            </NavLink>
+            <NavLink to="/schedule" className={({ isActive }) => (isActive ? activeLink : idleLink)}>
+              Schedule
             </NavLink>
             <NavLink to="/about" className={({ isActive }) => (isActive ? activeLink : idleLink)}>
               About
@@ -195,6 +154,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/premium" element={<PremiumPicks />} />
           <Route path="/scoreboard" element={<Scoreboard />} />
+          <Route path="/schedule" element={<Schedule />} />
           <Route path="/p/:id" element={<PickDetail />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />

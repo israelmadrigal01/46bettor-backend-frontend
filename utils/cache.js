@@ -1,15 +1,29 @@
-// utils/cache.js
-class TTLCache {
+// utils/cache.js (CommonJS)
+class MemoryCache {
   constructor() { this.store = new Map(); }
   get(key) {
     const hit = this.store.get(key);
-    if (!hit) return null;
-    if (hit.exp <= Date.now()) { this.store.delete(key); return null; }
-    return hit.val;
+    if (!hit) return undefined;
+    if (hit.expiresAt && hit.expiresAt < Date.now()) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return hit.value;
   }
-  set(key, val, seconds = 10) {
-    this.store.set(key, { val, exp: Date.now() + seconds * 1000 });
+  set(key, value, ttlSec = 0) {
+    const expiresAt = ttlSec > 0 ? Date.now() + ttlSec * 1000 : 0;
+    this.store.set(key, { value, expiresAt });
+    return value;
   }
-  clear() { this.store.clear(); }
 }
-module.exports = new TTLCache();
+const cache = new MemoryCache();
+
+async function withCache(key, ttlSec, fn) {
+  const v = cache.get(key);
+  if (v !== undefined) return v;
+  const fresh = await fn();
+  cache.set(key, fresh, ttlSec);
+  return fresh;
+}
+
+module.exports = { cache, withCache };

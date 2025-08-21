@@ -1,127 +1,98 @@
 /* eslint-env browser */
-import { useEffect, useMemo, useState } from 'react';
-import ShareButton from '../components/ShareButton.jsx';
+import { useEffect, useState } from "react";
 
-const getApiBase = () =>
-  localStorage.getItem('apiBase') ||
-  import.meta.env.VITE_API_BASE ||
-  'https://api.46bettor.com';
-
-const getAdminKey = () => localStorage.getItem('adminKey') || '';
-
-function normalizeFromProtected(docs = []) {
-  // /api/premium/today (protected) returns _id and other fields
-  return docs.map((p) => ({
-    id: p._id || p.id,
-    date: p.date,
-    sport: p.sport,
-    league: p.league,
-    eventId: p.eventId,
-    homeTeam: p.homeTeam,
-    awayTeam: p.awayTeam,
-    market: p.market,
-    selection: p.selection,
-    line: p.line,
-    odds: p.odds,
-    status: p.status,
-    finalScore: p.finalScore,
-    tags: p.tags || [],
-    settledAt: p.settledAt,
-    createdAt: p.createdAt,
-    updatedAt: p.updatedAt,
-  }));
+// Read API base (localStorage first, then Vite .env)
+function getApiBase() {
+  const ls = (localStorage.getItem("apiBase") || "").trim().replace(/\/+$/, "");
+  const env =
+    (import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : "")
+      .trim()
+      .replace(/\/+$/, "");
+  return ls || env || "";
 }
 
-function normalizeFromPublic(arr = []) {
-  // /api/public/scoreboard returns id already
-  return arr.map((p) => ({ ...p }));
+function Masked({ value }) {
+  if (!value) return <span style={{ color: "#9ca3af" }}>not set</span>;
+  const tail = String(value).slice(-6);
+  return <span>••••••••••••{tail}</span>;
 }
 
 export default function PremiumPicks() {
-  const [picks, setPicks] = useState([]);
-  const [err, setErr] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  const apiBase = useMemo(getApiBase, []);
-  const adminKey = useMemo(getAdminKey, []);
+  const [apiBase, setApiBase] = useState(getApiBase());
+  const [adminKey, setAdminKey] = useState(localStorage.getItem("adminKey") || "");
+  const [note, setNote] = useState("");
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setErr('');
-      try {
-        if (adminKey) {
-          // Try protected first
-          const r = await fetch(`${apiBase}/api/premium/today`, {
-            headers: { 'x-admin-key': adminKey },
-          });
-          if (r.ok) {
-            const j = await r.json();
-            setPicks(normalizeFromProtected(j?.picks || []));
-            setLoading(false);
-            return;
-          }
-        }
-        // Fallback to public
-        const r2 = await fetch(`${apiBase}/api/public/scoreboard`);
-        if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
-        const j2 = await r2.json();
-        setPicks(normalizeFromPublic(j2?.picks || []));
-      } catch (e) {
-        setErr(String(e));
-      } finally {
-        setLoading(false);
-      }
+    const onStorage = () => {
+      setApiBase(getApiBase());
+      setAdminKey(localStorage.getItem("adminKey") || "");
     };
-    load();
-  }, [apiBase, adminKey]);
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
-  if (loading) return <div className="p-6">Loading picks…</div>;
-  if (err) return <div className="p-6 text-red-600">Error: {err}</div>;
-
-  if (!picks.length) {
-    return <div className="p-6 text-gray-600">No picks right now.</div>;
-  }
+  const ready = Boolean(apiBase) && Boolean(adminKey);
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-3">
-      <h1 className="text-2xl font-bold mb-2">Premium Picks</h1>
-      <div className="grid gap-3">
-        {picks.map((p) => {
-          const shareUrl = `https://app.46bettor.com/p/${p.id}`;
-          return (
-            <div key={p.id} className="border rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <div>
-                <div className="text-sm text-gray-500 font-mono">{p.id}</div>
-                <div className="font-semibold">
-                  {p.date} — {p.sport}{p.league ? ` (${p.league})` : ""}
-                </div>
-                <div className="text-gray-700">
-                  {p.homeTeam ?? 'Home'} vs {p.awayTeam ?? 'Away'}
-                </div>
-                <div className="text-gray-700">
-                  {p.market?.toUpperCase()} • <b>{p.selection}</b>
-                  {p.line != null ? <> • Line: <span className="font-mono">{p.line}</span></> : null}
-                  • Odds: <span className="font-mono">{p.odds}</span>
-                </div>
-                {Array.isArray(p.tags) && p.tags.length > 0 && (
-                  <div className="text-sm text-gray-600">Tags: {p.tags.join(", ")}</div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <a
-                  className="rounded-xl px-3 py-1.5 border hover:bg-gray-50"
-                  href={`/p/${p.id}`}
-                  title="Open details"
-                >
-                  Details
-                </a>
-                <ShareButton url={shareUrl} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: 16 }}>
+      <h1 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px" }}>Premium Picks</h1>
+
+      <p style={{ color: "#4b5563", marginBottom: 12 }}>
+        This section will show the gated premium feed once your{" "}
+        <code>ADMIN_KEY</code> is set. Use the inputs in the header to set:
+      </p>
+
+      <ul style={{ margin: "0 0 12px 18px", color: "#374151" }}>
+        <li>
+          <b>API</b>: <code>{apiBase || "(unset)"}</code>
+        </li>
+        <li>
+          <b>Admin Key</b>: <Masked value={adminKey} />
+        </li>
+      </ul>
+
+      {!ready ? (
+        <div
+          style={{
+            border: "1px solid #fde68a",
+            background: "#fffbeb",
+            color: "#92400e",
+            padding: 12,
+            borderRadius: 12,
+            marginBottom: 12,
+          }}
+        >
+          Paste your <b>ADMIN_KEY</b> in the header box and click <b>Set</b>. Make sure the API is{" "}
+          <code>http://127.0.0.1:5050</code> (dev) or <code>https://api.46bettor.com</code> (prod).
+        </div>
+      ) : (
+        <div
+          style={{
+            border: "1px solid #bbf7d0",
+            background: "#ecfdf5",
+            color: "#065f46",
+            padding: 12,
+            borderRadius: 12,
+            marginBottom: 12,
+          }}
+        >
+          Admin key detected — premium endpoints are ready to wire up.
+        </div>
+      )}
+
+      <details style={{ marginTop: 16 }} onToggle={() => setNote("")}>
+        <summary style={{ cursor: "pointer", fontWeight: 700 }}>Developer note</summary>
+        <div style={{ marginTop: 8, color: "#4b5563" }}>
+          Once your protected endpoints are finalized (e.g. <code>/api/premium/*</code>), we’ll fetch them
+          here using the <code>x-admin-key</code> header and render the premium feed.
+        </div>
+      </details>
+
+      {note && (
+        <div style={{ marginTop: 8, color: "#b91c1c" }}>
+          {note}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,9 @@
-// index.js (clean)
-// Load env
+// index.js — 46bettor backend (CommonJS, quiet logs)
+
+// 1) Env
 require('dotenv').config();
 
+// 2) Core
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -31,7 +33,7 @@ if (!process.env.ADMIN_KEY) {
   console.warn('[WARN] ADMIN_KEY not set — protected routes will reject.');
 }
 
-// Helper: safe require of optional files
+// Helper: safe require of optional files (CommonJS only)
 function safeRequire(paths) {
   for (const p of paths) {
     try {
@@ -42,12 +44,25 @@ function safeRequire(paths) {
   return null;
 }
 
+// Helper: mount a router if it exists; log only on success
+function mountIfExists(paths, mountPath, label) {
+  const m = safeRequire(paths);
+  if (m) {
+    app.use(mountPath, m);
+    console.log(`[mount] ${label} → ${mountPath}`);
+    return true;
+  }
+  return false;
+}
+
 /* -------------------------- CORS ---------------------------- */
 
 const DEFAULT_ORIGINS = [
+  // production frontends
+  'https://app.46bettor.com',
   'https://46bettor.com',
   'https://www.46bettor.com',
-  // local dev:
+  // local dev
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5050',
@@ -56,7 +71,7 @@ const DEFAULT_ORIGINS = [
 
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || DEFAULT_ORIGINS.join(','))
   .split(',')
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
 app.use(
@@ -77,9 +92,9 @@ app.use(
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-/* -------------------------- Public routes ------------------- */
+/* -------------------------- Public: always-on ---------------- */
 
-// Simple public health
+// Simple public health (always available)
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
@@ -89,17 +104,37 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-// Mount routes/public/** if present
-const publicRouter = safeRequire(['./routes/public']);
-if (publicRouter) {
-  app.use('/api/public', publicRouter);
-} else {
-  console.warn('[INFO] routes/public not found — skipping /api/public');
+/* -------------------------- Public routers ------------------ */
+
+// Try to mount your routes/public loader (quiet version recommended)
+let publicWasMounted = mountIfExists(
+  ['./routes/public/index.js', './routes/public.js', './routes/public'],
+  '/api/public',
+  'routes/public'
+);
+
+// If not present, provide a tiny fallback with /api/public/health
+if (!publicWasMounted) {
+  const r = express.Router();
+  r.get('/health', (_req, res) => {
+    res.json({ ok: true, service: '46bettor-backend/public', ts: new Date().toISOString() });
+  });
+  app.use('/api/public', r);
+  console.log('[mount] fallback public → /api/public');
 }
 
-// ADD a direct public pick-by-id route here so it works even if the router file is missing
+// Mount public schedule routes explicitly (guaranteed if file exists)
+try {
+  const publicSchedule = require('./routes/public-schedule.js');
+  app.use('/api/public', publicSchedule);
+  console.log('[public] mounted public-schedule.js');
+} catch (e) {
+  console.warn('[public] public-schedule.js not found or failed to load:', e?.message || e);
+}
+
+// Direct public pick-by-id route (works even if routes/public is missing)
 const PremiumPick =
-  safeRequire(['./models/PremiumPick', './models/Pick', './models/picks']) || null;
+  safeRequire(['./models/PremiumPick.js', './models/PremiumPick', './models/Pick.js', './models/picks.js']) || null;
 
 app.get('/api/public/picks/:id', async (req, res) => {
   try {
@@ -107,7 +142,6 @@ app.get('/api/public/picks/:id', async (req, res) => {
       return res.status(500).json({ ok: false, error: 'model_not_loaded' });
     }
     const id = req.params.id;
-    // Try by _id, then by alternative fields if your schema has them
     let doc = null;
 
     // Try ObjectId lookup
@@ -116,14 +150,12 @@ app.get('/api/public/picks/:id', async (req, res) => {
         doc = await PremiumPick.findById(id).lean();
       } catch (_) {}
     }
+    // Fallback external id / custom field
+    if (!doc) {
+      doc = await PremiumPick.findOne({ id }).lean();
+    }
+    if (!doc) return res.status(404).json({ ok: false, error: 'not_found' });
 
-    // Fallbacks: adjust field names if your schema uses a different id field
-    if (!doc) {
-      doc = await PremiumPick.findOne({ id }).lean(); // e.g., external string id
-    }
-    if (!doc) {
-      return res.status(404).json({ ok: false, error: 'not_found' });
-    }
     return res.json({ ok: true, pick: doc });
   } catch (err) {
     console.error('[ERROR] /api/public/picks/:id', err);
@@ -146,33 +178,10 @@ app.use('/api', (req, res, next) => {
 
 /* ---------------------- Protected routes -------------------- */
 
-const metricsRouter = safeRequire(['./routes/metrics']);
-if (metricsRouter) {
-  app.use('/api/metrics', metricsRouter);
-} else {
-  console.warn('[INFO] routes/metrics not found — skipping /api/metrics');
-}
-
-const premiumRouter = safeRequire(['./routes/premium', './routes/premiumRoutes']);
-if (premiumRouter) {
-  app.use('/api/premium', premiumRouter);
-} else {
-  console.warn('[INFO] premium routes not found — skipping /api/premium');
-}
-
-const appRouter = safeRequire(['./routes/app', './routes/appRoutes']);
-if (appRouter) {
-  app.use('/api/app', appRouter);
-} else {
-  console.warn('[INFO] app routes not found — skipping /api/app');
-}
-
-const devpanelRouter = safeRequire(['./routes/devpanel', './routes/devpanelRoutes']);
-if (devpanelRouter) {
-  app.use('/api/devpanel', devpanelRouter);
-} else {
-  console.warn('[INFO] devpanel routes not found — skipping /api/devpanel');
-}
+mountIfExists(['./routes/metrics/index.js', './routes/metrics.js'], '/api/metrics', 'routes/metrics');
+mountIfExists(['./routes/premium/index.js', './routes/premium.js', './routes/premiumRoutes.js'], '/api/premium', 'routes/premium');
+mountIfExists(['./routes/app/index.js', './routes/app.js', './routes/appRoutes.js'], '/api/app', 'routes/app');
+mountIfExists(['./routes/devpanel/index.js', './routes/devpanel.js', './routes/devpanelRoutes.js'], '/api/devpanel', 'routes/devpanel');
 
 /* -------------------------- 404 for /api -------------------- */
 
