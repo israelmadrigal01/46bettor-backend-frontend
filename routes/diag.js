@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 
-// Admin-only gate is applied at /api level in index.js
+// Admin-only gate is applied in index.js (x-admin-key)
 router.get('/keys', (req, res) => {
   const keys = {
     balldontlie: {

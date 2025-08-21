@@ -1,22 +1,21 @@
 // integrations/balldontlie.js
-// Robust client for BallDontLie v1 with explicit Bearer header.
+// BallDontLie v1 client. Always sends Authorization: Bearer <key>.
 
 const axios = require('axios');
 
 const API_BASE = 'https://api.balldontlie.io/v1';
 
-// Pick up the key from either env var
+// Accept either env var name
 function getKey() {
   return process.env.BALLDONTLIE_API_KEY || process.env.BALLDONTLIE_KEY || '';
 }
 
 function authHeaders() {
   const k = getKey();
-  // BallDontLie requires `Authorization: Bearer <key>`
   return k ? { Authorization: `Bearer ${k}` } : {};
 }
 
-// Fetch games for a single calendar date YYYY-MM-DD
+// Fetch games for a single date YYYY-MM-DD
 async function gamesByDate(dateStr) {
   const url = `${API_BASE}/games`;
   const params = { 'dates[]': dateStr, per_page: 100 };
@@ -25,19 +24,20 @@ async function gamesByDate(dateStr) {
     params,
     headers: { Accept: 'application/json', ...authHeaders() },
     timeout: 15000,
-    // We’ll inspect non-200s and throw with a helpful message
-    validateStatus: () => true,
+    validateStatus: () => true, // let us throw a useful error below
   });
 
   if (res.status !== 200) {
     const qs = `dates[]=${dateStr}&per_page=100`;
     let body = res.data;
     try { body = typeof body === 'string' ? body : JSON.stringify(body); } catch (_) {}
-    throw new Error(`GET ${url}?${qs} -> ${res.status} ${res.statusText} ${String(body).slice(0,200)}`);
+    throw new Error(
+      `GET ${url}?${qs} -> ${res.status} ${res.statusText} ${String(body).slice(0,200)}`
+    );
   }
 
   const rows = Array.isArray(res.data?.data) ? res.data.data : [];
-  const items = rows.map(g => ({
+  const items = rows.map((g) => ({
     provider: 'balldontlie',
     sport: 'NBA',
     league: 'NBA',
@@ -54,4 +54,9 @@ async function gamesByDate(dateStr) {
   return { ok: true, count: items.length, items };
 }
 
-module.exports = { gamesByDate, getKey };
+// Export both names so older routes still work
+module.exports = {
+  gamesByDate,
+  nbaGamesByDate: gamesByDate,
+  getKey,
+};
