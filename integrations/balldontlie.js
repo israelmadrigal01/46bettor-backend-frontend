@@ -1,59 +1,57 @@
-// integrations/balldontlie.js (CommonJS)
-// Fetch NBA games from balldontlie with proper Authorization header.
+// integrations/balldontlie.js
+// Robust client for BallDontLie v1 with explicit Bearer header.
 
-const axios = require("axios");
+const axios = require('axios');
 
+const API_BASE = 'https://api.balldontlie.io/v1';
+
+// Pick up the key from either env var
 function getKey() {
-  // Support either name
-  return process.env.BALLDONTLIE_API_KEY || process.env.BALLDONTLIE_KEY || "";
+  return process.env.BALLDONTLIE_API_KEY || process.env.BALLDONTLIE_KEY || '';
 }
 
-/**
- * fetchNBAGames({ date: 'YYYY-MM-DD', signal? })
- */
-async function fetchNBAGames({ date, signal }) {
-  const key = getKey();
-  if (!key) {
-    return { ok: false, error: "balldontlie key missing (set BALLDONTLIE_API_KEY in Render env)" };
-  }
-
-  const url = "https://api.balldontlie.io/v1/games";
-  const params = { "dates[]": date, per_page: 100 };
-
-  try {
-    const resp = await axios.get(url, {
-      params,
-      signal,
-      timeout: 12000,
-      headers: {
-        Authorization: `Bearer ${key}`,   // REQUIRED by balldontlie
-        Accept: "application/json",
-      },
-    });
-
-    const data = resp?.data?.data ?? [];
-    const items = data.map((g) => ({
-      provider: "balldontlie",
-      sport: "NBA",
-      league: "NBA",
-      id: String(g.id),
-      startsAt: g.date,
-      status: g.status || "",
-      homeTeam: g.home_team?.full_name || g.home_team?.name || g.home_team?.abbreviation || "",
-      awayTeam: g.visitor_team?.full_name || g.visitor_team?.name || g.visitor_team?.abbreviation || "",
-      homeScore: Number.isFinite(g.home_team_score) ? g.home_team_score : null,
-      awayScore: Number.isFinite(g.visitor_team_score) ? g.visitor_team_score : null,
-      extras: { season: g.season, period: g.period, postseason: g.postseason },
-    }));
-
-    return { ok: true, provider: "balldontlie", count: items.length, items };
-  } catch (e) {
-    const msg =
-      e?.response?.data ||
-      (e?.response?.status ? `HTTP ${e.response.status}` : e?.message) ||
-      "upstream_error";
-    return { ok: false, error: typeof msg === "string" ? msg : JSON.stringify(msg) };
-  }
+function authHeaders() {
+  const k = getKey();
+  // BallDontLie requires `Authorization: Bearer <key>`
+  return k ? { Authorization: `Bearer ${k}` } : {};
 }
 
-module.exports = { fetchNBAGames };
+// Fetch games for a single calendar date YYYY-MM-DD
+async function gamesByDate(dateStr) {
+  const url = `${API_BASE}/games`;
+  const params = { 'dates[]': dateStr, per_page: 100 };
+
+  const res = await axios.get(url, {
+    params,
+    headers: { Accept: 'application/json', ...authHeaders() },
+    timeout: 15000,
+    // We’ll inspect non-200s and throw with a helpful message
+    validateStatus: () => true,
+  });
+
+  if (res.status !== 200) {
+    const qs = `dates[]=${dateStr}&per_page=100`;
+    let body = res.data;
+    try { body = typeof body === 'string' ? body : JSON.stringify(body); } catch (_) {}
+    throw new Error(`GET ${url}?${qs} -> ${res.status} ${res.statusText} ${String(body).slice(0,200)}`);
+  }
+
+  const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+  const items = rows.map(g => ({
+    provider: 'balldontlie',
+    sport: 'NBA',
+    league: 'NBA',
+    id: String(g.id),
+    startsAt: g.date ? new Date(g.date).toISOString() : null,
+    status: g.status || null,
+    homeTeam: g.home_team?.full_name || g.home_team?.name || null,
+    awayTeam: g.visitor_team?.full_name || g.visitor_team?.name || null,
+    homeScore: g.home_team_score ?? null,
+    awayScore: g.visitor_team_score ?? null,
+    extras: { season: g.season },
+  }));
+
+  return { ok: true, count: items.length, items };
+}
+
+module.exports = { gamesByDate, getKey };
