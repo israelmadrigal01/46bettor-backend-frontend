@@ -1,2 +1,17 @@
+# netlify.toml at repo root
+
+[build]
+  # Build the frontend that lives in 46bettor-frontend/
+  command = "cd 46bettor-frontend && npm ci && npm run build"
+  publish = "46bettor-frontend/dist"
+
 [build.environment]
+  # <-- Vite env var used by the app at build time
   VITE_API_BASE = "https://api.46bettor.com"
+
+# Optional: force a modern Node for the build
+[functions]
+  node_bundler = "esbuild"
+
+[build.processing]
+  skip_processing = true
