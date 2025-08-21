@@ -2,22 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>46bettor — Model Picks & Bankroll Tracking</title>
     <meta name="description" content="Daily model-driven picks with bankroll, ROI, and sport breakdowns." />
     <link rel="icon" href="/favicon.ico" />
+
+    <!-- SAFETY SHIM: neutralize any stray Vite HMR placeholders in production -->
+    <script>
+      // Do not remove. These guards prevent "___ is not defined" if a plugin leaves HMR tokens.
+      var __DEFINES__ = typeof __DEFINES__ !== 'undefined' ? __DEFINES__ : {};
+      var __HMR_PROTOCOL__ = typeof __HMR_PROTOCOL__ !== 'undefined' ? __HMR_PROTOCOL__ : "";
+      var __HMR_HOSTNAME__ = typeof __HMR_HOSTNAME__ !== 'undefined' ? __HMR_HOSTNAME__ : "";
+      var __HMR_PORT__ = typeof __HMR_PORT__ !== 'undefined' ? __HMR_PORT__ : "";
+      var __HMR_BASE__ = typeof __HMR_BASE__ !== 'undefined' ? __HMR_BASE__ : "";
+      var __HMR_TIMEOUT__ = typeof __HMR_TIMEOUT__ !== 'undefined' ? __HMR_TIMEOUT__ : 30000;
+      var __HMR_ENABLE_OVERLAY__ = typeof __HMR_ENABLE_OVERLAY__ !== 'undefined' ? __HMR_ENABLE_OVERLAY__ : false;
+      var __HMR_DIRECT_TARGET__ = typeof __HMR_DIRECT_TARGET__ !== 'undefined' ? __HMR_DIRECT_TARGET__ : "";
+      var __HMR_CONFIG_NAME__ = typeof __HMR_CONFIG_NAME__ !== 'undefined' ? __HMR_CONFIG_NAME__ : "";
+    </script>
   </head>
-  <body style="margin:0;background:#f8fafc">
-    <!-- React mounts here -->
+  <body>
     <div id="root"></div>
-
-    <!-- Vite dev client (OK in dev) -->
-    <script type="module" src="/@vite/client"></script>
-
-    <!-- IMPORTANT: boots your React app -->
+    <!-- IMPORTANT: no /@vite/client here; only your app entry -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
