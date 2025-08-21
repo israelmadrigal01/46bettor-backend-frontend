@@ -1,23 +1,16 @@
-// index.js — 46bettor backend (CommonJS, quiet logs)
+// index.js — 46bettor backend (CommonJS)
 
-// 1) Env
 require('dotenv').config();
-
-// 2) Core
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
 const app = express();
-
-/* -------------------------- Config -------------------------- */
-
 app.set('trust proxy', true);
 
-// Port
+/* -------------------------- Ports & DB -------------------------- */
 const PORT = Number(process.env.PORT || 5050);
 
-// Prefer MONGODB_URI but accept other names
 function getMongoUri() {
   return (
     process.env.MONGODB_URI ||
@@ -33,7 +26,7 @@ if (!process.env.ADMIN_KEY) {
   console.warn('[WARN] ADMIN_KEY not set — protected routes will reject.');
 }
 
-// Helper: safe require of optional files (CommonJS only)
+/* -------------------------- Helpers ----------------------------- */
 function safeRequire(paths) {
   for (const p of paths) {
     try {
@@ -44,21 +37,27 @@ function safeRequire(paths) {
   return null;
 }
 
-// Helper: mount a router if it exists; log only on success
-function mountIfExists(paths, mountPath, label) {
-  const m = safeRequire(paths);
-  if (m) {
-    app.use(mountPath, m);
-    console.log(`[mount] ${label} → ${mountPath}`);
-    return true;
-  }
-  return false;
-}
+/* -------------------- CORS (public vs protected) -----------------
 
-/* -------------------------- CORS ---------------------------- */
+   Public endpoints (/api/public/**) are read-only and should be
+   callable from ANY site (Netlify, future mobile app, etc).
+   We set a permissive CORS just for /api/public.
 
+   Everything else stays on the allowlist below.
+------------------------------------------------------------------*/
+
+// 1) OPEN CORS for /api/public (only)
+app.use(
+  '/api/public',
+  cors({
+    origin: true,         // mirror the Origin request header
+    credentials: false,   // no cookies
+    maxAge: 86400,
+  })
+);
+
+// 2) Allowlist CORS for everything else
 const DEFAULT_ORIGINS = [
-  // production frontends
   'https://app.46bettor.com',
   'https://46bettor.com',
   'https://www.46bettor.com',
@@ -92,9 +91,7 @@ app.use(
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-/* -------------------------- Public: always-on ---------------- */
-
-// Simple public health (always available)
+/* -------------------------- Always-on health -------------------- */
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
@@ -104,26 +101,15 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-/* -------------------------- Public routers ------------------ */
-
-// Try to mount your routes/public loader (quiet version recommended)
-let publicWasMounted = mountIfExists(
-  ['./routes/public/index.js', './routes/public.js', './routes/public'],
-  '/api/public',
-  'routes/public'
-);
-
-// If not present, provide a tiny fallback with /api/public/health
-if (!publicWasMounted) {
-  const r = express.Router();
-  r.get('/health', (_req, res) => {
-    res.json({ ok: true, service: '46bettor-backend/public', ts: new Date().toISOString() });
-  });
-  app.use('/api/public', r);
-  console.log('[mount] fallback public → /api/public');
+/* -------------------------- Public routers ---------------------- */
+const publicRouter = safeRequire(['./routes/public/index.js', './routes/public.js', './routes/public']);
+if (publicRouter) {
+  app.use('/api/public', publicRouter);
+  console.log('[mount] routes/public → /api/public');
+} else {
+  console.warn('[INFO] routes/public not found — skipping /api/public');
 }
 
-// Mount public schedule routes explicitly (guaranteed if file exists)
 try {
   const publicSchedule = require('./routes/public-schedule.js');
   app.use('/api/public', publicSchedule);
@@ -132,28 +118,21 @@ try {
   console.warn('[public] public-schedule.js not found or failed to load:', e?.message || e);
 }
 
-// Direct public pick-by-id route (works even if routes/public is missing)
+/* ----- Direct public pick-by-id so it works even if router missing */
 const PremiumPick =
   safeRequire(['./models/PremiumPick.js', './models/PremiumPick', './models/Pick.js', './models/picks.js']) || null;
 
 app.get('/api/public/picks/:id', async (req, res) => {
   try {
-    if (!PremiumPick) {
-      return res.status(500).json({ ok: false, error: 'model_not_loaded' });
-    }
+    if (!PremiumPick) return res.status(500).json({ ok: false, error: 'model_not_loaded' });
+
     const id = req.params.id;
     let doc = null;
 
-    // Try ObjectId lookup
     if (id && id.length >= 12) {
-      try {
-        doc = await PremiumPick.findById(id).lean();
-      } catch (_) {}
+      try { doc = await PremiumPick.findById(id).lean(); } catch (_) {}
     }
-    // Fallback external id / custom field
-    if (!doc) {
-      doc = await PremiumPick.findOne({ id }).lean();
-    }
+    if (!doc) doc = await PremiumPick.findOne({ id }).lean();
     if (!doc) return res.status(404).json({ ok: false, error: 'not_found' });
 
     return res.json({ ok: true, pick: doc });
@@ -163,7 +142,7 @@ app.get('/api/public/picks/:id', async (req, res) => {
   }
 });
 
-/* ---------------------- Admin key guard --------------------- */
+/* ---------------------- Admin key guard ------------------------- */
 // Applies to /api/* except /api/health and /api/public/*
 app.use('/api', (req, res, next) => {
   if (req.method === 'OPTIONS') return next();
@@ -176,21 +155,45 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-/* ---------------------- Protected routes -------------------- */
+/* ---------------------- Protected routes ------------------------ */
+const metricsRouter = safeRequire(['./routes/metrics/index.js', './routes/metrics.js', './routes/metrics']);
+if (metricsRouter) {
+  app.use('/api/metrics', metricsRouter);
+  console.log('[mount] routes/metrics → /api/metrics');
+} else {
+  console.warn('[INFO] routes/metrics not found — skipping /api/metrics');
+}
 
-mountIfExists(['./routes/metrics/index.js', './routes/metrics.js'], '/api/metrics', 'routes/metrics');
-mountIfExists(['./routes/premium/index.js', './routes/premium.js', './routes/premiumRoutes.js'], '/api/premium', 'routes/premium');
-mountIfExists(['./routes/app/index.js', './routes/app.js', './routes/appRoutes.js'], '/api/app', 'routes/app');
-mountIfExists(['./routes/devpanel/index.js', './routes/devpanel.js', './routes/devpanelRoutes.js'], '/api/devpanel', 'routes/devpanel');
+const premiumRouter = safeRequire(['./routes/premium/index.js', './routes/premium.js', './routes/premiumRoutes.js']);
+if (premiumRouter) {
+  app.use('/api/premium', premiumRouter);
+  console.log('[mount] routes/premium → /api/premium');
+} else {
+  console.warn('[INFO] premium routes not found — skipping /api/premium');
+}
 
-/* -------------------------- 404 for /api -------------------- */
+const appRouter = safeRequire(['./routes/app/index.js', './routes/app.js', './routes/appRoutes.js']);
+if (appRouter) {
+  app.use('/api/app', appRouter);
+  console.log('[mount] routes/app → /api/app');
+} else {
+  console.warn('[INFO] app routes not found — skipping /api/app');
+}
 
+const devpanelRouter = safeRequire(['./routes/devpanel/index.js', './routes/devpanel.js', './routes/devpanelRoutes.js']);
+if (devpanelRouter) {
+  app.use('/api/devpanel', devpanelRouter);
+  console.log('[mount] routes/devpanel → /api/devpanel');
+} else {
+  console.warn('[INFO] devpanel routes not found — skipping /api/devpanel');
+}
+
+/* -------------------------- 404 for /api ------------------------ */
 app.use('/api', (_req, res) => {
   res.status(404).json({ ok: false, error: 'not_found' });
 });
 
-/* -------------------------- DB + Server --------------------- */
-
+/* -------------------------- DB + Server ------------------------- */
 async function start() {
   try {
     if (!MONGO_URI) {
@@ -203,7 +206,7 @@ async function start() {
 
     app.listen(PORT, () => {
       console.log(`[OK] 46bettor-backend listening on :${PORT}`);
-      console.log('[CORS] Allowed origins:', ALLOWED_ORIGINS.join(', '));
+      console.log('[CORS] Public: open; Protected allowlist:', ALLOWED_ORIGINS.join(', '));
     });
   } catch (err) {
     console.error('[FATAL] Failed to start server:', err);
@@ -211,11 +214,7 @@ async function start() {
   }
 }
 
-process.on('unhandledRejection', (reason) => {
-  console.error('[UNHANDLED REJECTION]', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('[UNCAUGHT EXCEPTION]', err);
-});
+process.on('unhandledRejection', (reason) => console.error('[UNHANDLED REJECTION]', reason));
+process.on('uncaughtException', (err) => console.error('[UNCAUGHT EXCEPTION]', err));
 
 start();
