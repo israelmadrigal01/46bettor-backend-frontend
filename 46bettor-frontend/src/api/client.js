@@ -36,7 +36,7 @@ export const api = {
     return [];
   },
 
-  // schedule (currently NBA via balldontlie)
+  // schedule (NBA via balldontlie)
   schedule: (sport = 'nba', date /* YYYY-MM-DD or undefined */) => {
     const params = new URLSearchParams();
     if (date) params.set('date', date);
@@ -47,13 +47,12 @@ export const api = {
   // odds (NBA/NFL wired)
   odds: (sport = 'nba') => getJSON(`/api/public/odds/${encodeURIComponent(sport)}`),
 
-  // protected (uses admin key)
+  // protected (x-admin-key)
   premium: () =>
-    getJSON('/api/premium', {
-      headers: { 'x-admin-key': getAdminKey() },
-    }),
+    getJSON('/api/premium', { headers: { 'x-admin-key': getAdminKey() } }),
   metricsSummary: () =>
-    getJSON('/api/metrics/summary', {
-      headers: { 'x-admin-key': getAdminKey() },
-    }),
+    getJSON('/api/metrics/summary', { headers: { 'x-admin-key': getAdminKey() } }),
 };
+
+// Back-compat so old imports keep working:
+export { api as API };
