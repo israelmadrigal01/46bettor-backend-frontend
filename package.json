@@ -2,14 +2,18 @@
   "name": "46bettor-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Backend API for 46Bettor (odds, weather, injuries, history, grading, multi-sport).",
+  "description": "Backend API for 46Bettor (odds, schedule, metrics).",
   "main": "index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon --legacy-watch index.js",
     "smoke": "bash scripts/smoke.sh",
-    "metrics": "echo 'Try: /api/metrics/summary, /ledger, /record, /export.csv'",
-    "tiles": "curl -sS -H 'x-admin-key: a3eba6d6f587279a64d3e0e64df10bf3f957551947eab0798c454cd3459275e7' http://127.0.0.1:5051/api/metrics/tiles | jq ."
+    "metrics": "echo \"Try: /api/metrics/summary, /ledger, /record, /export.csv\"",
+    "tiles": "curl -sS -H \"x-admin-key: $ADMIN_KEY\" http://127.0.0.1:5050/api/metrics/tiles | jq ."
   },
   "dependencies": {
     "axios": "^1.11.0",
@@ -25,20 +29,7 @@
     "node-cron": "^3.0.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.12",
-    "autoprefixer": "^10.4.21",
     "nodemon": "^3.1.10"
   },
   "license": "MIT"
-  {
-  "name": "46bettor-backend",
-  "version": "1.0.0",
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    // ... your existing deps
-  }
-}
-
 }
