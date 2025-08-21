@@ -1,55 +1,65 @@
-// 46bettor-frontend/src/api/client.js
-/* Minimal API client + global fetch patch to attach x-admin-key on protected endpoints */
+// src/api/client.js
+/* Tiny API client with admin-key support and nice errors */
 
-function getBase() {
-  // Prefer localStorage override, then Vite env, then prod API
-  const ls = (typeof localStorage !== "undefined" && localStorage.getItem("apiBase")) || "";
-  const env = import.meta?.env?.VITE_API_BASE || "";
-  const base = (ls || env || "https://api.46bettor.com").replace(/\/+$/, "");
-  return base;
+const DEFAULT_BASE = 'https://api.46bettor.com';
+
+export function getApiBase() {
+  const stored = localStorage.getItem('apiBase');
+  return (stored && stored.trim()) || DEFAULT_BASE;
 }
 
-export const api = {
-  get base() {
-    return getBase();
+export function getAdminKey() {
+  return (localStorage.getItem('adminKey') || '').trim();
+}
+
+async function http(method, path, { params, signal } = {}) {
+  const base = getApiBase().replace(/\/+$/, '');
+  const key  = getAdminKey();
+  const url  = new URL(base + path);
+
+  if (params && typeof params === 'object') {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    });
+  }
+
+  const headers = { Accept: 'application/json' };
+  if (key) headers['x-admin-key'] = key;
+
+  const res = await fetch(url.toString(), { method, headers, signal });
+
+  // Try to read JSON safely; if not JSON, throw a readable error
+  let data = null;
+  const text = await res.text();
+  try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+
+  if (!res.ok) {
+    const msg = data?.error || res.statusText || 'request_failed';
+    const err = new Error(msg);
+    err.status = res.status;
+    err.data = data || text;
+    throw err;
+  }
+  return data;
+}
+
+const get = (p, o) => http('GET', p, o);
+
+export const API = {
+  // public
+  public: {
+    health: () => get('/api/public/health'),
+    tiles : () => get('/api/public/tiles'),
+    recent: () => get('/api/public/recent'),
   },
-  headers(extra = {}) {
-    const h = new Headers(extra);
-    h.set("Accept", "application/json");
-    const k = typeof localStorage !== "undefined" ? localStorage.getItem("adminKey") : "";
-    if (k) h.set("x-admin-key", k);
-    return h;
+
+  // protected (needs x-admin-key)
+  metrics: {
+    summary: () => get('/api/metrics/summary'),
+    tiles  : () => get('/api/metrics/tiles'),
+    ledger : (from, to) => get('/api/metrics/ledger', { params: { from, to } }),
   },
-  async get(path, init = {}) {
-    const url = path.startsWith("http") ? path : `${this.base}${path}`;
-    const res = await fetch(url, { ...init, headers: this.headers(init.headers) });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    return res.json();
-  },
+
+  // convenience helpers for UI
+  util: { getApiBase, getAdminKey },
 };
-
-// --- Global fetch patch: automatically attach x-admin-key for /api/metrics and /api/premium ---
-(function patchFetchForAdminKey() {
-  if (typeof window === "undefined" || !window.fetch) return;
-  const original = window.fetch;
-  window.fetch = (input, init = {}) => {
-    try {
-      const urlStr = typeof input === "string" ? input : (input && input.url) || "";
-      // Build absolute if it's a relative API path
-      const abs = urlStr.startsWith("http") ? urlStr : `${getBase()}${urlStr.startsWith("/") ? "" : "/"}${urlStr}`;
-      const pathname = new URL(abs).pathname;
-      const needsKey = /^\/api\/(metrics|premium)\b/.test(pathname);
-
-      if (needsKey) {
-        const k = (typeof localStorage !== "undefined" && localStorage.getItem("adminKey")) || "";
-        const headers = new Headers(init.headers || {});
-        headers.set("Accept", "application/json");
-        if (k) headers.set("x-admin-key", k);
-        return original(input, { ...init, headers });
-      }
-    } catch (_) {
-      // fall through to original fetch
-    }
-    return original(input, init);
-  };
-})();
