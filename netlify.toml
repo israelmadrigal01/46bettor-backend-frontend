@@ -1,17 +1,17 @@
-# netlify.toml at repo root
+# netlify.toml — monorepo-friendly
 
 [build]
-  # Build the frontend that lives in 46bettor-frontend/
-  command = "cd 46bettor-frontend && npm ci && npm run build"
-  publish = "46bettor-frontend/dist"
+# run the build from the REPO ROOT, but execute npm *inside* the subfolder
+command = "npm ci --prefix 46bettor-frontend && npm run build --prefix 46bettor-frontend"
+publish = "46bettor-frontend/dist"
 
 [build.environment]
-  # <-- Vite env var used by the app at build time
-  VITE_API_BASE = "https://api.46bettor.com"
+# Netlify supports 18/20 LTS. Use 20 to match modern Vite.
+NODE_VERSION = "20"
+VITE_API_BASE = "https://api.46bettor.com"
 
-# Optional: force a modern Node for the build
-[functions]
-  node_bundler = "esbuild"
-
-[build.processing]
-  skip_processing = true
+# Single Page App fallback (React Router)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
