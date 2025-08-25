@@ -1,58 +1,77 @@
-/* eslint-env browser */
-// src/api/client.js
-const getBase = () =>
-  (localStorage.getItem('apiBase') || import.meta.env.VITE_API_BASE || 'https://api.46bettor.com')
-    .replace(/\/+$/, '');
+// 46bettor-frontend/src/api/client.js
 
-const getAdminKey = () => localStorage.getItem('adminKey') || '';
-
-async function getJSON(path, { signal, headers = {} } = {}) {
-  const url = `${getBase()}${path}`;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      ...headers,
-    },
-    signal,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`GET ${url} -> ${res.status} ${res.statusText} ${text}`);
-  }
-  return res.json();
+// ---- helpers ---------------------------------------------------------------
+function readBase() {
+  // Order: header input (localStorage) -> Vite env -> prod API
+  return (
+    (typeof localStorage !== "undefined" && localStorage.getItem("apiBase")) ||
+    import.meta?.env?.VITE_API_BASE ||
+    "https://api.46bettor.com"
+  );
 }
 
-export const api = {
-  // public
-  health: () => getJSON('/api/public/health'),
-  tiles: () => getJSON('/api/public/tiles'),
-  recent: async () => {
-    const d = await getJSON('/api/public/recent');
-    if (Array.isArray(d)) return d;
-    if (d?.picks) return d.picks;
-    if (d?.items) return d.items;
-    if (d?.data) return d.data;
-    return [];
+function readAdminKey() {
+  return (typeof localStorage !== "undefined" && localStorage.getItem("adminKey")) || "";
+}
+
+function buildHeaders() {
+  const h = { "content-type": "application/json" };
+  const k = readAdminKey();
+  if (k) h["x-admin-key"] = k;
+  return h;
+}
+
+async function get(path) {
+  const url = `${readBase()}${path}`;
+  const res = await fetch(url, { headers: buildHeaders() });
+  // try to parse JSON either way so the UI can show the API error body
+  let body = null;
+  try { body = await res.json(); } catch (_) {}
+  if (!res.ok && body && typeof body === "object") return body;
+  return body ?? { ok: false, error: `HTTP ${res.status}` };
+}
+
+export function saveApiBase(v) {
+  if (typeof localStorage !== "undefined") localStorage.setItem("apiBase", v || "");
+}
+
+export function saveAdminKey(v) {
+  if (typeof localStorage !== "undefined") localStorage.setItem("adminKey", v || "");
+}
+
+// ---- API surface -----------------------------------------------------------
+export const API = {
+  // public, no admin key required (we’ll still send it if present)
+  public: {
+    health:   ()         => get("/api/public/health"),
+    tiles:    ()         => get("/api/public/tiles"),
+    recent:   ()         => get("/api/public/recent"),
+    picks:    ()         => get("/api/public/picks"),
+    odds: {
+      nba:    ()         => get("/api/public/odds/nba"),
+      nfl:    ()         => get("/api/public/odds/nfl"),
+    },
+    schedule: {
+      nba:    (date)     => get(`/api/public/schedule/nba${date ? `?date=${date}` : ""}`),
+      mlb:    (date)     => get(`/api/public/schedule/mlb${date ? `?date=${date}` : ""}`),
+      nhl:    (date)     => get(`/api/public/schedule/nhl${date ? `?date=${date}` : ""}`),
+      nfl:    (date)     => get(`/api/public/schedule/nfl${date ? `?date=${date}` : ""}`),
+      // generic helper some pages expect:
+      any:    (sport,date)=> get(`/api/public/schedule/${sport}${date ? `?date=${date}` : ""}`),
+    },
   },
 
-  // schedule (NBA via balldontlie)
-  schedule: (sport = 'nba', date /* YYYY-MM-DD or undefined */) => {
-    const params = new URLSearchParams();
-    if (date) params.set('date', date);
-    const qs = params.toString() ? `?${params.toString()}` : '';
-    return getJSON(`/api/public/schedule/${encodeURIComponent(sport)}${qs}`);
+  // protected (admin key required)
+  metrics: {
+    summary: ()         => get("/api/metrics/summary"),
+    tiles:   ()         => get("/api/metrics/tiles"),
+    ledger:  (from,to)  => get(`/api/metrics/ledger?from=${from}&to=${to}`),
   },
 
-  // odds (NBA/NFL wired)
-  odds: (sport = 'nba') => getJSON(`/api/public/odds/${encodeURIComponent(sport)}`),
-
-  // protected (x-admin-key)
-  premium: () =>
-    getJSON('/api/premium', { headers: { 'x-admin-key': getAdminKey() } }),
-  metricsSummary: () =>
-    getJSON('/api/metrics/summary', { headers: { 'x-admin-key': getAdminKey() } }),
+  premium:  ()         => get("/api/premium"),
 };
 
-// Back-compat so old imports keep working:
-export { api as API };
+// Legacy aliases so older code continues to work without edits:
+API.schedule = (sport, date) => API.public.schedule.any(String(sport || "").toLowerCase(), date);
+export { API as api };  // lets you `import { api } from '../api/client'`
+export default API;
