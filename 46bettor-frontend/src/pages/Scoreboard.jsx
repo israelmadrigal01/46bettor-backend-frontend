@@ -1,109 +1,130 @@
-// 46bettor-frontend/src/pages/Scoreboard.jsx
-import React, { useEffect, useState } from "react";
-import { API } from "../api/client";
+// 46bettor-frontend/src/pages/Scoreboard.jsx — FULL FILE
+import React, { useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
 
-function yyyy_mm_dd(date = new Date()) {
-  const d = new Date(date);
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
+// simple YYYY-MM-DD helper (from Date or string)
+function toYMD(v) {
+  if (!v) return "";
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === "string") return v;
+  try { return new Date(v).toISOString().slice(0, 10); } catch { return ""; }
 }
 
-function GameRow({ g }) {
-  const when = new Date(g.startsAt).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return (
-    <div className="border rounded-xl p-4 flex items-center justify-between">
-      <div className="text-sm opacity-70">{when}</div>
-      <div className="font-medium">
-        {g.awayTeam} @ {g.homeTeam}
-      </div>
-      <div className="text-right">
-        {g.status === "Final" || g.homeScore || g.awayScore ? (
-          <div className="font-semibold">
-            {g.awayScore ?? "-"}–{g.homeScore ?? "-"}
-          </div>
-        ) : (
-          <span className="opacity-70">{g.status || "Scheduled"}</span>
-        )}
-      </div>
-    </div>
-  );
-}
+const SPORTS = [
+  { key: "nba", label: "NBA" },
+  { key: "mlb", label: "MLB" },
+  { key: "nhl", label: "NHL" },
+  { key: "nfl", label: "NFL" },
+];
 
 export default function Scoreboard() {
-  const [sport, setSport] = useState("NBA");
-  const [date, setDate] = useState(yyyy_mm_dd());
-  const [state, setState] = useState({ loading: false, error: "", items: [] });
+  const [sport, setSport] = useState("nba");
+  const [date, setDate] = useState(() => toYMD(new Date())); // today
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [items, setItems] = useState([]);
+
+  const selected = useMemo(
+    () => SPORTS.find((s) => s.key === sport) || SPORTS[0],
+    [sport]
+  );
 
   async function load() {
-    setState((s) => ({ ...s, loading: true, error: "" }));
-    const res = await API.schedule(sport, date); // legacy-friendly helper
-    if (res?.ok) setState({ loading: false, error: "", items: res.items || [] });
-    else setState({ loading: false, error: res?.error || "Failed to fetch", items: [] });
+    setLoading(true);
+    setErr("");
+    try {
+      const res = await api.schedule(sport, { date });
+      const rows = Array.isArray(res?.items) ? res.items : [];
+      setItems(rows);
+      if (!rows.length && res?.ok) {
+        setErr("No games found for this date.");
+      }
+    } catch (e) {
+      const msg = String(e?.message || e);
+      // show a nicer message for ratelimits
+      if (msg.includes("429") || /Too Many Requests/i.test(msg)) {
+        setErr("Rate limited by upstream provider (balldontlie). Try again in a minute.");
+      } else {
+        setErr(msg);
+      }
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [sport, date]);
+  useEffect(() => { load(); /* load on mount */ }, []); // eslint-disable-line
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Scoreboard</h1>
+    <div className="max-w-5xl mx-auto px-4 py-6">
+      <h1 className="text-2xl font-semibold mb-4">Scoreboard</h1>
 
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-wrap gap-3 items-center mb-4">
         <label className="text-sm">Sport</label>
         <select
-          className="border rounded-lg px-3 py-2"
           value={sport}
           onChange={(e) => setSport(e.target.value)}
+          className="border rounded px-2 py-1"
         >
-          <option>NBA</option>
-          <option>NFL</option>
-          <option>MLB</option>
-          <option>NHL</option>
+          {SPORTS.map((s) => (
+            <option key={s.key} value={s.key}>{s.label}</option>
+          ))}
         </select>
 
         <label className="text-sm ml-4">Date</label>
         <input
           type="date"
-          className="border rounded-lg px-3 py-2"
           value={date}
           onChange={(e) => setDate(e.target.value)}
+          className="border rounded px-2 py-1"
         />
+
         <button
-          className="border rounded-lg px-3 py-2"
-          onClick={() => setDate(yyyy_mm_dd())}
+          className="ml-2 rounded px-3 py-1 border hover:bg-gray-50"
+          onClick={() => setDate(toYMD(new Date()))}
         >
           Today
         </button>
 
         <button
-          className="border rounded-lg px-3 py-2"
-          title="Known-good NBA date with results"
-          onClick={() => { setSport("NBA"); setDate("2025-02-01"); }}
+          className="ml-2 rounded px-3 py-1 bg-black text-white hover:opacity-90"
+          onClick={load}
+          disabled={loading}
         >
-          Demo (NBA 2025-02-01)
+          {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
 
-      {state.loading && <div className="opacity-70">Loading…</div>}
-      {!!state.error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3">
-          Error: {state.error}
+      {err ? (
+        <div className="bg-red-50 text-red-700 border border-red-200 rounded p-3 mb-4">
+          Error: {err}
         </div>
-      )}
-      {!state.loading && !state.error && state.items.length === 0 && (
-        <div className="opacity-70">No games found for {sport} on {date}.</div>
-      )}
+      ) : null}
 
       <div className="grid gap-3">
-        {state.items.map((g) => (
-          <GameRow key={`${g.provider}:${g.id}`} g={g} />
+        {(Array.isArray(items) ? items : []).map((g, i) => (
+          <div key={`${g.id || i}`} className="border rounded p-3">
+            <div className="text-sm opacity-70 mb-1">
+              {g.provider || selected.label} • {toYMD(g.startsAt || date)}
+              {g.status ? ` • ${g.status}` : ""}
+            </div>
+            <div className="flex justify-between items-center">
+              <div className="font-medium">
+                {g.awayTeam} @ {g.homeTeam}
+              </div>
+              <div className="text-sm">
+                {typeof g.awayScore === "number" && typeof g.homeScore === "number"
+                  ? `${g.awayScore} - ${g.homeScore}`
+                  : ""}
+              </div>
+            </div>
+          </div>
         ))}
       </div>
+
+      {!loading && !err && (!items || !items.length) ? (
+        <div className="text-sm opacity-70 mt-4">Nothing to show.</div>
+      ) : null}
     </div>
   );
 }

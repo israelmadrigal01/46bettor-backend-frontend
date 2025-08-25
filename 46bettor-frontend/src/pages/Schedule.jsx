@@ -1,91 +1,121 @@
-// 46bettor-frontend/src/pages/Schedule.jsx
-import React, { useEffect, useState } from "react";
-import { API } from "../api/client";
+// 46bettor-frontend/src/pages/Schedule.jsx — FULL FILE
+import React, { useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
 
-const pad = (n) => String(n).padStart(2, "0");
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+function toYMD(v) {
+  if (!v) return "";
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === "string") return v;
+  try { return new Date(v).toISOString().slice(0, 10); } catch { return ""; }
+}
+
+const SPORTS = [
+  { key: "nba", label: "NBA" },
+  { key: "mlb", label: "MLB" },
+  { key: "nhl", label: "NHL" },
+  { key: "nfl", label: "NFL" },
+];
 
 export default function Schedule() {
-  const [sport, setSport] = useState("NBA");
-  const [date, setDate] = useState(todayStr());
-  const [state, setState] = useState({ loading: false, error: "", items: [] });
+  const [sport, setSport] = useState("nba");
+  const [date, setDate] = useState(() => toYMD(new Date()));
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [items, setItems] = useState([]);
+
+  const selected = useMemo(
+    () => SPORTS.find((s) => s.key === sport) || SPORTS[0],
+    [sport]
+  );
 
   async function load() {
-    setState({ loading: true, error: "", items: [] });
-    const res = await API.schedule(sport, date);
-    if (res?.ok) setState({ loading: false, error: "", items: res.items || [] });
-    else setState({ loading: false, error: res?.error || "Failed to fetch", items: [] });
+    setLoading(true);
+    setErr("");
+    try {
+      const res = await api.schedule(sport, { date });
+      const rows = Array.isArray(res?.items) ? res.items : [];
+      setItems(rows);
+      if (!rows.length && res?.ok) {
+        setErr("No games scheduled for this date.");
+      }
+    } catch (e) {
+      const msg = String(e?.message || e);
+      if (msg.includes("429") || /Too Many Requests/i.test(msg)) {
+        setErr("Rate limited by upstream provider (balldontlie). Try again soon.");
+      } else {
+        setErr(msg);
+      }
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [sport, date]);
+  useEffect(() => { load(); }, []); // eslint-disable-line
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Schedule</h1>
+    <div className="max-w-5xl mx-auto px-4 py-6">
+      <h1 className="text-2xl font-semibold mb-4">Schedule</h1>
 
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-wrap gap-3 items-center mb-4">
         <label className="text-sm">Sport</label>
         <select
-          className="border rounded-lg px-3 py-2"
           value={sport}
           onChange={(e) => setSport(e.target.value)}
+          className="border rounded px-2 py-1"
         >
-          <option>NBA</option>
-          <option>NFL</option>
-          <option>MLB</option>
-          <option>NHL</option>
+          {SPORTS.map((s) => (
+            <option key={s.key} value={s.key}>{s.label}</option>
+          ))}
         </select>
 
         <label className="text-sm ml-4">Date</label>
         <input
           type="date"
-          className="border rounded-lg px-3 py-2"
           value={date}
           onChange={(e) => setDate(e.target.value)}
+          className="border rounded px-2 py-1"
         />
 
         <button
-          className="border rounded-lg px-3 py-2"
-          onClick={() => setDate(todayStr())}
+          className="ml-2 rounded px-3 py-1 border hover:bg-gray-50"
+          onClick={() => setDate(toYMD(new Date()))}
         >
           Today
         </button>
 
         <button
-          className="border rounded-lg px-3 py-2"
-          title="Known-good NBA date with results"
-          onClick={() => { setSport("NBA"); setDate("2025-02-01"); }}
+          className="ml-2 rounded px-3 py-1 bg-black text-white hover:opacity-90"
+          onClick={load}
+          disabled={loading}
         >
-          Demo (NBA 2025-02-01)
+          {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
 
-      {state.loading && <div className="opacity-70">Loading…</div>}
-      {!!state.error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3">
-          Error: {state.error}
+      {err ? (
+        <div className="bg-red-50 text-red-700 border border-red-200 rounded p-3 mb-4">
+          Error: {err}
         </div>
-      )}
+      ) : null}
 
-      <ul className="space-y-2">
-        {state.items.map((g) => {
-          const when = new Date(g.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-          return (
-            <li key={`${g.provider}:${g.id}`} className="border rounded-xl p-4 flex items-center justify-between">
-              <div className="opacity-70 text-sm">{when}</div>
-              <div className="font-medium">{g.awayTeam} @ {g.homeTeam}</div>
-              <div className="opacity-70 text-sm">{g.status || "Scheduled"}</div>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="grid gap-3">
+        {(Array.isArray(items) ? items : []).map((g, i) => (
+          <div key={`${g.id || i}`} className="border rounded p-3">
+            <div className="text-sm opacity-70 mb-1">
+              {g.provider || selected.label} • {toYMD(g.startsAt || date)}
+              {g.status ? ` • ${g.status}` : ""}
+            </div>
+            <div className="font-medium">
+              {g.awayTeam} @ {g.homeTeam}
+            </div>
+          </div>
+        ))}
+      </div>
 
-      {!state.loading && !state.error && state.items.length === 0 && (
-        <div className="opacity-70">No games found for {sport} on {date}.</div>
-      )}
+      {!loading && !err && (!items || !items.length) ? (
+        <div className="text-sm opacity-70 mt-4">No games scheduled.</div>
+      ) : null}
     </div>
   );
 }
